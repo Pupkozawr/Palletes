@@ -361,3 +361,7 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# Project-specific artifacts
+*.csv
+reshenie-zadachi-trehmernoy-upakovki-s-paletirovaniem-konteynerov.pdf

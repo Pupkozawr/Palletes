@@ -1,0 +1,13 @@
+order_id=64
+group=group2
+scenario=pattern_30_5_5_5_5
+total_boxes=50
+total_skus=5
+total_aisles=2
+target_pallets=
+pallet_type=EUR
+pallet_length_mm=1200
+pallet_width_mm=800
+pallet_max_height_mm=2000
+notes=Special qty-per-SKU stress cases.
+generation_time_us=8,000

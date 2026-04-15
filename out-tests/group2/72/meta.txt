@@ -1,0 +1,13 @@
+order_id=72
+group=group2
+scenario=many_skus_1to2_plus_two_big
+total_boxes=61
+total_skus=18
+total_aisles=5
+target_pallets=
+pallet_type=EUR
+pallet_length_mm=1200
+pallet_width_mm=800
+pallet_max_height_mm=2000
+notes=Two very large SKUs + many small tail SKUs (1-2 boxes).
+generation_time_us=59,000

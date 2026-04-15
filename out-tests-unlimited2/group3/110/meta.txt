@@ -1,0 +1,13 @@
+order_id=110
+group=group3
+scenario=all_small_N100
+total_boxes=100
+total_skus=37
+total_aisles=2
+target_pallets=
+pallet_type=EUR
+pallet_length_mm=1200
+pallet_width_mm=800
+pallet_max_height_mm=2000
+notes=Geometry stress: large/small/mixed/shape patterns.
+generation_time_us=67,900

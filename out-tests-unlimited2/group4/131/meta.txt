@@ -1,0 +1,13 @@
+order_id=131
+group=group4
+scenario=balanced_categories_P7
+total_boxes=197
+total_skus=27
+total_aisles=8
+target_pallets=7
+pallet_type=EUR
+pallet_length_mm=1200
+pallet_width_mm=800
+pallet_max_height_mm=2000
+notes=Multi-pallet + categories. Target pallets ~7.
+generation_time_us=30,200

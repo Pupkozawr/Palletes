@@ -1,0 +1,13 @@
+order_id=135
+group=group4
+scenario=one_big_many_small_P9
+total_boxes=194
+total_skus=27
+total_aisles=8
+target_pallets=9
+pallet_type=EUR
+pallet_length_mm=1200
+pallet_width_mm=800
+pallet_max_height_mm=2000
+notes=Multi-pallet + categories. Target pallets ~9.
+generation_time_us=30,000

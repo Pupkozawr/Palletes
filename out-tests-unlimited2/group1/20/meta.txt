@@ -1,0 +1,13 @@
+order_id=20
+group=group1
+scenario=realistic_fixedN_40
+total_boxes=40
+total_skus=14
+total_aisles=4
+target_pallets=
+pallet_type=EUR
+pallet_length_mm=1200
+pallet_width_mm=800
+pallet_max_height_mm=2000
+notes=Realistic-like orders, fixed total boxes N to test scaling.
+generation_time_us=36,100

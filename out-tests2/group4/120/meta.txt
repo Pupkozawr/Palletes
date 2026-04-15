@@ -1,0 +1,13 @@
+order_id=120
+group=group4
+scenario=one_big_many_small_P2
+total_boxes=178
+total_skus=22
+total_aisles=13
+target_pallets=2
+pallet_type=EUR
+pallet_length_mm=1200
+pallet_width_mm=800
+pallet_max_height_mm=2000
+notes=Multi-pallet + categories. Target pallets ~2.
+generation_time_us=267,800
