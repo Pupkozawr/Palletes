@@ -72,7 +72,6 @@ namespace Palletes
 
             WritePackingCsv(outPath, pallet, placements);
 
-            // Basic self-check.
             var vr = PackingCsvValidator.ReadPackingCsv(outPath);
             var report = new ValidationReport();
             PackingCsvValidator.ValidateBasic(vr.Boxes, report);
@@ -362,7 +361,6 @@ namespace Palletes
 
             if (z == 0) return true;
 
-            // Relaxed support check: require that placement point touches the top face of some previously placed box.
             return CornerSupported(x, y, z, placed);
         }
 
