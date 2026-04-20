@@ -44,6 +44,20 @@ namespace Palletes
                 return 0;
             }
 
+            if (args.Length >= 1 && string.Equals(args[0], "verify", StringComparison.OrdinalIgnoreCase))
+            {
+                var seed = args.Length >= 2 && int.TryParse(args[1], out var vs) ? vs : 12345;
+                var maxOrders = args.Length >= 3 && int.TryParse(args[2], out var vm) ? vm : 50;
+                bool runUnitTests = true;
+                for (int i = 1; i < args.Length; i++)
+                {
+                    if (string.Equals(args[i], "--skip-tests", StringComparison.OrdinalIgnoreCase))
+                        runUnitTests = false;
+                }
+
+                return VerificationRunner.Run(seed, maxOrders, runUnitTests);
+            }
+
             if (args.Length >= 1 && string.Equals(args[0], "runtests", StringComparison.OrdinalIgnoreCase))
             {
                 var outDir = args.Length >= 2 ? args[1] : "out-tests";
