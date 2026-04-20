@@ -194,7 +194,7 @@ namespace Palletes
             int n = a.Order.Length;
             var child = new Chromosome(n);
 
-            // Order crossover (OX)
+    
             int cut1 = rng.Int(0, n - 1);
             int cut2 = rng.Int(0, n - 1);
             if (cut1 > cut2) (cut1, cut2) = (cut2, cut1);
@@ -221,7 +221,6 @@ namespace Palletes
                 read = (read + 1) % n;
             }
 
-            // Orientation: single point crossover
             int oCut = rng.Int(0, n - 1);
             for (int i = 0; i < n; i++)
             {

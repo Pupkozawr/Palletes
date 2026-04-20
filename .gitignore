@@ -365,3 +365,6 @@ FodyWeavers.xsd
 # Project-specific artifacts
 *.csv
 reshenie-zadachi-trehmernoy-upakovki-s-paletirovaniem-konteynerov.pdf
+
+# Local generated outputs from this repo
+out-verify/
