@@ -25,7 +25,15 @@ namespace Palletes
                 PalletType = generationPallet.PalletType,
                 Length = generationPallet.Length,
                 Width = generationPallet.Width,
-                MaxHeight = 0
+                MaxHeight = generationPallet.MaxHeight
+            };
+
+            var packingContainer = new ContainerSpec
+            {
+                ContainerType = "UK-3",
+                Length = 1930,
+                Width = 1225,
+                Height = 2128
             };
 
             int failures = 0;
@@ -45,7 +53,7 @@ namespace Palletes
                 try
                 {
                     var sw = Stopwatch.StartNew();
-                    GeneticPalletPacker.PackCsv(sampleIn, sampleOut, packingPallet, seed);
+                    GeneticPalletPacker.PackCsv(sampleIn, sampleOut, packingPallet, packingContainer, seed);
                     sw.Stop();
                     Console.WriteLine($"OK: {sampleOut}");
                     Console.WriteLine($"Time: {sw.ElapsedMilliseconds} ms");
@@ -68,7 +76,7 @@ namespace Palletes
             {
                 var genOut = Path.Combine(outDir, "generated");
                 var sw = Stopwatch.StartNew();
-                int rc = GeneratedPackingTestRunner.Run(genOut, seed, maxOrders, generationPallet, packingPallet);
+                int rc = GeneratedPackingTestRunner.Run(genOut, seed, maxOrders, generationPallet, packingPallet, packingContainer);
                 sw.Stop();
 
                 if (rc == 0)

@@ -14,6 +14,14 @@ namespace Palletes
         public int MaxHeight { get; set; } = 2000;
     }
 
+    public sealed class ContainerSpec
+    {
+        public string ContainerType { get; set; } = "UK-3";
+        public int Length { get; set; } = 1930;
+        public int Width { get; set; } = 1225;
+        public int Height { get; set; } = 2128;
+    }
+
     public sealed class SkuLine
     {
         public int SKU { get; set; }

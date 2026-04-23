@@ -17,12 +17,21 @@ public sealed class PackingTests
     private static PalletMeta ToMeta(PalletSpec p) => new()
     {
         PalletId = p.PalletType,
+        ContainerId = "",
         OriginX = 0,
         OriginY = 0,
         OriginZ = 0,
         SizeL = p.Length,
         SizeW = p.Width,
         SizeH = p.MaxHeight
+    };
+
+    private static ContainerSpec Uk3Container() => new()
+    {
+        ContainerType = "UK-3",
+        Length = 1930,
+        Width = 1225,
+        Height = 2128
     };
 
     private static void AssertValidPacking(IReadOnlyList<BoxPlacement> placements, PalletSpec pallet)
@@ -113,6 +122,77 @@ public sealed class PackingTests
         var report = new ValidationReport();
         PackingCsvValidator.ValidateBasic(vr.Boxes, report);
         PackingCsvValidator.ValidateInsidePallet(vr.Boxes, vr.Pallet!, report);
+        PackingCsvValidator.ValidateNoOverlap(vr.Boxes, report, touchIsOk: true);
+        Assert.True(report.ErrorCount == 0, string.Join("\n", report.Errors));
+    }
+
+    [Fact]
+    public void PackCsv_CanSplitAcrossMultiplePallets()
+    {
+        var pallet = DefaultPallet();
+        pallet.MaxHeight = 200;
+
+        var tempDir = Path.Combine(Path.GetTempPath(), "Palletes.Tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        var inPath = Path.Combine(tempDir, "in.csv");
+        var outPath = Path.Combine(tempDir, "out.csv");
+
+        var lines = new List<string>
+        {
+            "1",
+            "SKU,Quantity,Length,Width,Height,Weight,Strength,Aisle,Caustic",
+            string.Join(",", 700003, 26, 200, 200, 200, 0, 0, 0, 0, ""),
+        };
+
+        File.WriteAllLines(inPath, lines);
+
+        GeneticPalletPacker.PackCsv(inPath, outPath, pallet, seed: 11);
+
+        var vr = PackingCsvValidator.ReadPackingCsv(outPath);
+        Assert.Equal(26, vr.Boxes.Count);
+        Assert.Equal(2, vr.Pallets.Count);
+
+        var report = new ValidationReport();
+        PackingCsvValidator.ValidateBasic(vr.Boxes, report);
+        PackingCsvValidator.ValidateInsidePallet(vr.Boxes, vr.Pallets, report);
+        PackingCsvValidator.ValidateNoOverlap(vr.Boxes, report, touchIsOk: true);
+        Assert.True(report.ErrorCount == 0, string.Join("\n", report.Errors));
+    }
+
+    [Fact]
+    public void PackCsv_CanPlacePalletsIntoMultipleContainers()
+    {
+        var pallet = DefaultPallet();
+        pallet.MaxHeight = 200;
+        var container = Uk3Container();
+
+        var tempDir = Path.Combine(Path.GetTempPath(), "Palletes.Tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        var inPath = Path.Combine(tempDir, "in.csv");
+        var outPath = Path.Combine(tempDir, "out.csv");
+
+        var lines = new List<string>
+        {
+            "1",
+            "SKU,Quantity,Length,Width,Height,Weight,Strength,Aisle,Caustic",
+            string.Join(",", 700004, 50, 200, 200, 200, 0, 0, 0, 0, ""),
+        };
+
+        File.WriteAllLines(inPath, lines);
+
+        GeneticPalletPacker.PackCsv(inPath, outPath, pallet, container, seed: 17);
+
+        var vr = PackingCsvValidator.ReadPackingCsv(outPath);
+        Assert.Equal(50, vr.Boxes.Count);
+        Assert.Equal(3, vr.Pallets.Count);
+        Assert.Equal(2, vr.Containers.Count);
+
+        var report = new ValidationReport();
+        PackingCsvValidator.ValidateBasic(vr.Boxes, report);
+        PackingCsvValidator.ValidatePalletsInsideContainers(vr.Pallets, vr.Containers, report);
+        PackingCsvValidator.ValidateInsidePallet(vr.Boxes, vr.Pallets, report);
         PackingCsvValidator.ValidateNoOverlap(vr.Boxes, report, touchIsOk: true);
         Assert.True(report.ErrorCount == 0, string.Join("\n", report.Errors));
     }
