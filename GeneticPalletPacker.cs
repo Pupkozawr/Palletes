@@ -17,6 +17,7 @@ namespace Palletes
             public int W { get; }
             public int H { get; }
             public long Volume => (long)L * W * H;
+            public string SizeKey { get; }
 
             public PackBox(string id, int l, int w, int h)
             {
@@ -24,22 +25,69 @@ namespace Palletes
                 L = l;
                 W = w;
                 H = h;
+
+                var dims = new[] { l, w, h };
+                Array.Sort(dims);
+                SizeKey = string.Join("x", dims);
             }
         }
 
-        private readonly record struct PlacedBox(string Id, int x, int y, int z, int X, int Y, int Z)
+        private readonly record struct PlacedBox(PackBox Source, string Id, int x, int y, int z, int X, int Y, int Z)
         {
             public int Dx => X - x;
             public int Dy => Y - y;
             public int Dz => Z - z;
             public long Volume => (long)Dx * Dy * Dz;
+            public string SizeKey => Source.SizeKey;
         }
+
+        private sealed class PackedPallet
+        {
+            public string PalletId { get; }
+            public List<PlacedBox> Boxes { get; }
+            public string ContainerId { get; set; } = "";
+            public int OriginX { get; set; }
+            public int OriginY { get; set; }
+            public int OriginZ { get; set; }
+            public bool RotatedOnFloor { get; set; }
+            public int FootprintLength { get; set; }
+            public int FootprintWidth { get; set; }
+
+            public PackedPallet(string palletId, List<PlacedBox> boxes)
+            {
+                PalletId = palletId;
+                Boxes = boxes;
+            }
+        }
+
+        private sealed class PackedContainer
+        {
+            public string ContainerId { get; }
+            public List<PackedPallet> Pallets { get; } = new();
+
+            public PackedContainer(string containerId)
+            {
+                ContainerId = containerId;
+            }
+        }
+
+        private readonly record struct Rect2(int X1, int Y1, int X2, int Y2);
+
+        private readonly record struct DecodeMetrics(
+            int PlacedCount,
+            int Height,
+            long PlacedVolume,
+            long BoundingVolume,
+            int SameSizeTouchingCount);
 
         private sealed class Chromosome
         {
             public int[] Order { get; }
             public byte[] Orientation { get; }
-            public long Cost { get; set; }
+            public double Fitness { get; set; }
+            public int PlacedCount { get; set; }
+            public int Height { get; set; }
+            public long EmptyVolume { get; set; }
 
             public Chromosome(int n)
             {
@@ -52,34 +100,58 @@ namespace Palletes
                 var c = new Chromosome(Order.Length);
                 Array.Copy(Order, c.Order, Order.Length);
                 Array.Copy(Orientation, c.Orientation, Orientation.Length);
-                c.Cost = Cost;
+                c.Fitness = Fitness;
+                c.PlacedCount = PlacedCount;
+                c.Height = Height;
+                c.EmptyVolume = EmptyVolume;
                 return c;
             }
         }
 
         public static void PackCsv(string inPath, string outPath, PalletSpec pallet, int seed = 12345)
+            => PackCsv(inPath, outPath, pallet, container: null, seed);
+
+        public static void PackCsv(string inPath, string outPath, PalletSpec pallet, ContainerSpec? container, int seed = 12345)
         {
             if (pallet.Length <= 0 || pallet.Width <= 0)
                 throw new ArgumentOutOfRangeException(nameof(pallet), "Pallet base dimensions must be positive.");
 
             var items = ItemRow.ParseSimple(inPath);
-            var boxes = ExpandBoxes(items);
+            var boxes = ExpandBoxes(items).Select(b => new PackBox(b.Id, b.L, b.W, b.H)).ToList();
+            var effectivePallet = NormalizePallet(pallet);
 
-            var placements = Pack(boxes, pallet, seed);
+            var packedPallets = PackAcrossPallets(boxes, effectivePallet, seed);
+            List<PackedContainer> packedContainers;
+            if (container is not null)
+            {
+                var effectiveContainer = NormalizeContainer(container);
+                packedContainers = PlacePalletsInContainers(packedPallets, effectivePallet, effectiveContainer);
+            }
+            else
+            {
+                packedContainers = PlacePalletsInVirtualContainers(packedPallets, effectivePallet);
+            }
 
-            if (placements.Count != boxes.Count)
-                throw new InvalidOperationException($"Could not place all boxes. Placed={placements.Count}, total={boxes.Count}.");
+            int placedCount = packedPallets.Sum(p => p.Boxes.Count);
 
-            WritePackingCsv(outPath, pallet, placements);
+            if (placedCount != boxes.Count)
+                throw new InvalidOperationException($"Could not place all boxes. Placed={placedCount}, total={boxes.Count}.");
 
-            // Basic self-check.
+            WritePackingCsv(outPath, effectivePallet, container, packedContainers);
+
             var vr = PackingCsvValidator.ReadPackingCsv(outPath);
             var report = new ValidationReport();
             PackingCsvValidator.ValidateBasic(vr.Boxes, report);
-            if (vr.Pallet is not null)
+            PackingCsvValidator.ValidatePalletsInsideContainers(vr.Pallets, vr.Containers, report);
+            if (vr.Pallets.Count > 0)
+            {
+                PackingCsvValidator.ValidateInsidePallet(vr.Boxes, vr.Pallets, report);
+            }
+            else if (vr.Pallet is not null)
             {
                 PackingCsvValidator.ValidateInsidePallet(vr.Boxes, vr.Pallet, report);
             }
+
             PackingCsvValidator.ValidateNoOverlap(vr.Boxes, report, touchIsOk: true);
 
             if (report.ErrorCount > 0)
@@ -91,30 +163,291 @@ namespace Palletes
         public static List<BoxPlacement> Pack(IReadOnlyList<(string Id, int L, int W, int H)> boxes, PalletSpec pallet, int seed = 12345)
         {
             var packBoxes = boxes.Select(b => new PackBox(b.Id, b.L, b.W, b.H)).ToList();
-            return Pack(packBoxes, pallet, seed);
+            var effectivePallet = NormalizePallet(pallet);
+            var placed = PackSinglePallet(packBoxes, effectivePallet, seed);
+
+            if (placed.Count != packBoxes.Count)
+                throw new InvalidOperationException($"Could not place all boxes on a single pallet. Placed={placed.Count}, total={packBoxes.Count}.");
+
+            return placed.Select(p => new BoxPlacement
+            {
+                Id = p.Id,
+                PalletId = effectivePallet.PalletType,
+                x = p.x,
+                y = p.y,
+                z = p.z,
+                X = p.X,
+                Y = p.Y,
+                Z = p.Z
+            }).ToList();
         }
 
-        private static List<BoxPlacement> Pack(IReadOnlyList<PackBox> boxes, PalletSpec pallet, int seed)
+        private static PalletSpec NormalizePallet(PalletSpec pallet)
+        {
+            return new PalletSpec
+            {
+                PalletType = pallet.PalletType,
+                Length = pallet.Length,
+                Width = pallet.Width,
+                MaxHeight = pallet.MaxHeight > 0 ? pallet.MaxHeight : 2000
+            };
+        }
+
+        private static ContainerSpec NormalizeContainer(ContainerSpec container)
+        {
+            return new ContainerSpec
+            {
+                ContainerType = container.ContainerType,
+                Length = container.Length,
+                Width = container.Width,
+                Height = container.Height
+            };
+        }
+
+        private static List<PackedPallet> PackAcrossPallets(IReadOnlyList<PackBox> boxes, PalletSpec pallet, int seed)
+        {
+            var remaining = boxes
+                .OrderByDescending(b => b.Volume)
+                .ThenByDescending(b => Math.Max(b.L, Math.Max(b.W, b.H)))
+                .ToList();
+
+            var pallets = new List<PackedPallet>();
+            int palletIndex = 1;
+
+            while (remaining.Count > 0)
+            {
+                var placed = PackSinglePallet(remaining, pallet, seed + palletIndex * 104729);
+                if (placed.Count == 0)
+                {
+                    throw new InvalidOperationException($"Could not place any of the remaining {remaining.Count} boxes on pallet {palletIndex}.");
+                }
+
+                string palletId = $"{pallet.PalletType}_{palletIndex}";
+                pallets.Add(new PackedPallet(palletId, placed));
+
+                var usedIds = new HashSet<string>(placed.Select(p => p.Id), StringComparer.Ordinal);
+                remaining = remaining.Where(b => !usedIds.Contains(b.Id)).ToList();
+                palletIndex++;
+            }
+
+            return pallets;
+        }
+
+        private static List<PackedContainer> PlacePalletsInVirtualContainers(IReadOnlyList<PackedPallet> pallets, PalletSpec pallet)
+        {
+            var result = new List<PackedContainer>();
+            for (int i = 0; i < pallets.Count; i++)
+            {
+                var container = new PackedContainer($"VIRTUAL_{i + 1}");
+                pallets[i].ContainerId = container.ContainerId;
+                pallets[i].OriginX = 0;
+                pallets[i].OriginY = 0;
+                pallets[i].OriginZ = 0;
+                pallets[i].RotatedOnFloor = false;
+                pallets[i].FootprintLength = pallet.Length;
+                pallets[i].FootprintWidth = pallet.Width;
+                container.Pallets.Add(pallets[i]);
+                result.Add(container);
+            }
+
+            return result;
+        }
+
+        private static List<PackedContainer> PlacePalletsInContainers(
+            IReadOnlyList<PackedPallet> pallets,
+            PalletSpec pallet,
+            ContainerSpec containerSpec)
+        {
+            var result = new List<PackedContainer>();
+            var order = pallets
+                .OrderByDescending(p => p.Boxes.Count)
+                .ThenBy(p => p.PalletId, StringComparer.Ordinal)
+                .ToList();
+
+            for (int i = 0; i < order.Count; i++)
+            {
+                var palletToPlace = order[i];
+                bool placed = false;
+
+                for (int c = 0; c < result.Count && !placed; c++)
+                {
+                    if (TryPlacePalletInContainer(result[c], palletToPlace, pallet, containerSpec))
+                    {
+                        placed = true;
+                    }
+                }
+
+                if (!placed)
+                {
+                    var container = new PackedContainer($"{containerSpec.ContainerType}_{result.Count + 1}");
+                    if (!TryPlacePalletInContainer(container, palletToPlace, pallet, containerSpec))
+                    {
+                        throw new InvalidOperationException($"Pallet '{palletToPlace.PalletId}' does not fit into container '{containerSpec.ContainerType}'.");
+                    }
+
+                    result.Add(container);
+                }
+            }
+
+            return result;
+        }
+
+        private static bool TryPlacePalletInContainer(
+            PackedContainer container,
+            PackedPallet palletToPlace,
+            PalletSpec pallet,
+            ContainerSpec containerSpec)
+        {
+            var points = new List<(int X, int Y)> { (0, 0) };
+            var seen = new HashSet<(int X, int Y)> { (0, 0) };
+
+            for (int i = 0; i < container.Pallets.Count; i++)
+            {
+                var p = container.Pallets[i];
+                Add2DPoint(points, seen, p.OriginX + p.FootprintLength, p.OriginY, containerSpec);
+                Add2DPoint(points, seen, p.OriginX, p.OriginY + p.FootprintWidth, containerSpec);
+            }
+
+            points.Sort(static (a, b) =>
+            {
+                int y = a.Y.CompareTo(b.Y);
+                if (y != 0) return y;
+                return a.X.CompareTo(b.X);
+            });
+
+            foreach (var point in points)
+            {
+                bool canNormal = CanPlaceAt(container, pallet, containerSpec, point.X, point.Y, rotated: false);
+                bool canRotated = CanPlaceAt(container, pallet, containerSpec, point.X, point.Y, rotated: true);
+
+                if (!canNormal && !canRotated)
+                    continue;
+
+                bool useRotated;
+                if (canNormal && canRotated)
+                {
+                    useRotated = pallet.Width < pallet.Length;
+                }
+                else
+                {
+                    useRotated = canRotated;
+                }
+
+                if (TryPlaceAt(container, palletToPlace, pallet, containerSpec, point.X, point.Y, useRotated))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static bool CanPlaceAt(
+            PackedContainer container,
+            PalletSpec pallet,
+            ContainerSpec containerSpec,
+            int originX,
+            int originY,
+            bool rotated)
+        {
+            int footprintLength = rotated ? pallet.Width : pallet.Length;
+            int footprintWidth = rotated ? pallet.Length : pallet.Width;
+
+            if (originX < 0 || originY < 0) return false;
+            if (originX + footprintLength > containerSpec.Length || originY + footprintWidth > containerSpec.Width)
+                return false;
+            if (pallet.MaxHeight > containerSpec.Height)
+                return false;
+
+            var candidate = new Rect2(originX, originY, originX + footprintLength, originY + footprintWidth);
+            for (int i = 0; i < container.Pallets.Count; i++)
+            {
+                var other = container.Pallets[i];
+                var otherRect = new Rect2(other.OriginX, other.OriginY, other.OriginX + other.FootprintLength, other.OriginY + other.FootprintWidth);
+                bool separated =
+                    candidate.X2 <= otherRect.X1 || otherRect.X2 <= candidate.X1 ||
+                    candidate.Y2 <= otherRect.Y1 || otherRect.Y2 <= candidate.Y1;
+                if (!separated) return false;
+            }
+
+            return true;
+        }
+
+        private static bool TryPlaceAt(
+            PackedContainer container,
+            PackedPallet palletToPlace,
+            PalletSpec pallet,
+            ContainerSpec containerSpec,
+            int originX,
+            int originY,
+            bool rotated)
+        {
+            int footprintLength = rotated ? pallet.Width : pallet.Length;
+            int footprintWidth = rotated ? pallet.Length : pallet.Width;
+
+            if (!CanPlaceAt(container, pallet, containerSpec, originX, originY, rotated))
+                return false;
+
+            palletToPlace.ContainerId = container.ContainerId;
+            palletToPlace.OriginX = originX;
+            palletToPlace.OriginY = originY;
+            palletToPlace.OriginZ = 0;
+            palletToPlace.RotatedOnFloor = rotated;
+            palletToPlace.FootprintLength = footprintLength;
+            palletToPlace.FootprintWidth = footprintWidth;
+
+            if (!container.Pallets.Contains(palletToPlace))
+            {
+                container.Pallets.Add(palletToPlace);
+            }
+
+            return true;
+        }
+
+        private static void Add2DPoint(List<(int X, int Y)> points, HashSet<(int X, int Y)> seen, int x, int y, ContainerSpec container)
+        {
+            if (x < 0 || y < 0 || x > container.Length || y > container.Width) return;
+            var point = (x, y);
+            if (seen.Add(point))
+            {
+                points.Add(point);
+            }
+        }
+
+        private static List<PlacedBox> PackSinglePallet(IReadOnlyList<PackBox> boxes, PalletSpec pallet, int seed)
         {
             int n = boxes.Count;
-            if (n == 0) return new List<BoxPlacement>();
+            if (n == 0) return new List<PlacedBox>();
 
             var rng = new Rng(seed);
 
-            int populationSize = Math.Clamp(30 + n / 10, 30, 60);
-            int generations = Math.Clamp(80 + n / 3, 80, 200);
+            int populationSize = Math.Clamp(80 + n / 3, 80, 180);
+            int generations = Math.Clamp(280 + n, 280, 700);
             int tournamentK = 3;
 
             var population = new Chromosome[populationSize];
-            for (int i = 0; i < populationSize; i++)
+            population[0] = CreateHeuristicChromosome(boxes, descendingVolume: true);
+            Evaluate(population[0], boxes, pallet);
+
+            if (populationSize > 1)
             {
-                population[i] = RandomChromosome(n, rng);
-                population[i].Cost = EvaluateCost(population[i], boxes, pallet);
+                population[1] = CreateHeuristicChromosome(boxes, descendingVolume: false);
+                Evaluate(population[1], boxes, pallet);
             }
 
-            Chromosome best = population.OrderBy(c => c.Cost).First().Clone();
-            long bestCost = best.Cost;
+            for (int i = 2; i < populationSize; i++)
+            {
+                population[i] = RandomChromosome(n, rng);
+                Evaluate(population[i], boxes, pallet);
+            }
+
+            Chromosome best = population.OrderByDescending(c => c.Fitness)
+                .ThenByDescending(c => c.PlacedCount)
+                .ThenBy(c => c.Height)
+                .ThenBy(c => c.EmptyVolume)
+                .First()
+                .Clone();
+
             int noImprove = 0;
+            int noImproveLimit = Math.Clamp(90 + n / 2, 90, 220);
 
             for (int gen = 0; gen < generations; gen++)
             {
@@ -128,39 +461,89 @@ namespace Palletes
 
                     var child = Crossover(p1, p2, rng);
                     Mutate(child, rng);
-
-                    child.Cost = EvaluateCost(child, boxes, pallet);
+                    Evaluate(child, boxes, pallet);
                     next[i] = child;
                 }
 
                 population = next;
 
-                var genBest = population.OrderBy(c => c.Cost).First();
-                if (genBest.Cost < bestCost)
+                var genBest = population.OrderByDescending(c => c.Fitness)
+                    .ThenByDescending(c => c.PlacedCount)
+                    .ThenBy(c => c.Height)
+                    .ThenBy(c => c.EmptyVolume)
+                    .First();
+
+                if (IsBetter(genBest, best))
                 {
                     best = genBest.Clone();
-                    bestCost = genBest.Cost;
                     noImprove = 0;
                 }
                 else
                 {
                     noImprove++;
-                    if (noImprove >= 40)
+                    if (noImprove >= noImproveLimit)
                         break;
                 }
             }
 
-            var placed = Decode(best, boxes, pallet);
-            return placed.Select(p => new BoxPlacement
+            return Decode(best, boxes, pallet);
+        }
+
+        private static bool IsBetter(Chromosome candidate, Chromosome incumbent)
+        {
+            if (candidate.Fitness != incumbent.Fitness)
+                return candidate.Fitness > incumbent.Fitness;
+
+            if (candidate.PlacedCount != incumbent.PlacedCount)
+                return candidate.PlacedCount > incumbent.PlacedCount;
+
+            if (candidate.Height != incumbent.Height)
+                return candidate.Height < incumbent.Height;
+
+            return candidate.EmptyVolume < incumbent.EmptyVolume;
+        }
+
+        private static Chromosome CreateHeuristicChromosome(IReadOnlyList<PackBox> boxes, bool descendingVolume)
+        {
+            var order = Enumerable.Range(0, boxes.Count)
+                .OrderBy(i => descendingVolume ? 0 : 1)
+                .ThenByDescending(i => descendingVolume ? boxes[i].Volume : (long)boxes[i].L * boxes[i].W)
+                .ThenByDescending(i => boxes[i].H)
+                .ThenBy(i => boxes[i].Id, StringComparer.Ordinal)
+                .ToArray();
+
+            if (!descendingVolume)
             {
-                Id = p.Id,
-                x = p.x,
-                y = p.y,
-                z = p.z,
-                X = p.X,
-                Y = p.Y,
-                Z = p.Z
-            }).ToList();
+                Array.Reverse(order);
+            }
+
+            var c = new Chromosome(boxes.Count);
+            for (int i = 0; i < boxes.Count; i++)
+            {
+                c.Order[i] = order[i];
+                c.Orientation[i] = ChooseHeuristicOrientation(boxes[order[i]]);
+            }
+
+            return c;
+        }
+
+        private static byte ChooseHeuristicOrientation(PackBox b)
+        {
+            byte bestOri = 0;
+            long bestScore = long.MinValue;
+
+            for (byte ori = 0; ori < 6; ori++)
+            {
+                var (l, w, h) = OrientedDims(b, ori);
+                long score = (long)l * w * 10 - h;
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestOri = ori;
+                }
+            }
+
+            return bestOri;
         }
 
         private static Chromosome RandomChromosome(int n, Rng rng)
@@ -184,7 +567,7 @@ namespace Palletes
             for (int i = 1; i < k; i++)
             {
                 var c = pop[rng.Int(0, pop.Length - 1)];
-                if (c.Cost < best.Cost) best = c;
+                if (IsBetter(c, best)) best = c;
             }
             return best;
         }
@@ -194,7 +577,6 @@ namespace Palletes
             int n = a.Order.Length;
             var child = new Chromosome(n);
 
-    
             int cut1 = rng.Int(0, n - 1);
             int cut2 = rng.Int(0, n - 1);
             if (cut1 > cut2) (cut1, cut2) = (cut2, cut1);
@@ -203,6 +585,7 @@ namespace Palletes
             for (int i = cut1; i <= cut2; i++)
             {
                 child.Order[i] = a.Order[i];
+                child.Orientation[i] = a.Orientation[i];
                 used[child.Order[i]] = true;
             }
 
@@ -214,17 +597,12 @@ namespace Palletes
                 if (!used[gene])
                 {
                     child.Order[write] = gene;
+                    child.Orientation[write] = b.Orientation[read];
                     used[gene] = true;
                     write = (write + 1) % n;
                     filled++;
                 }
                 read = (read + 1) % n;
-            }
-
-            int oCut = rng.Int(0, n - 1);
-            for (int i = 0; i < n; i++)
-            {
-                child.Orientation[i] = i < oCut ? a.Orientation[i] : b.Orientation[i];
             }
 
             return child;
@@ -234,11 +612,26 @@ namespace Palletes
         {
             int n = c.Order.Length;
 
-            if (rng.Bool(0.35))
+            if (n >= 2 && rng.Bool(0.35))
             {
                 int i = rng.Int(0, n - 1);
                 int j = rng.Int(0, n - 1);
                 (c.Order[i], c.Order[j]) = (c.Order[j], c.Order[i]);
+                (c.Orientation[i], c.Orientation[j]) = (c.Orientation[j], c.Orientation[i]);
+            }
+
+            if (n >= 3 && rng.Bool(0.20))
+            {
+                int i = rng.Int(0, n - 1);
+                int j = rng.Int(0, n - 1);
+                if (i > j) (i, j) = (j, i);
+                while (i < j)
+                {
+                    (c.Order[i], c.Order[j]) = (c.Order[j], c.Order[i]);
+                    (c.Orientation[i], c.Orientation[j]) = (c.Orientation[j], c.Orientation[i]);
+                    i++;
+                    j--;
+                }
             }
 
             if (rng.Bool(0.45))
@@ -248,15 +641,22 @@ namespace Palletes
             }
         }
 
-        private static long EvaluateCost(Chromosome c, IReadOnlyList<PackBox> boxes, PalletSpec pallet)
+        private static void Evaluate(Chromosome c, IReadOnlyList<PackBox> boxes, PalletSpec pallet)
         {
             var placed = Decode(c, boxes, pallet);
+            var metrics = Measure(placed, boxes.Count, pallet);
 
-            int placedCount = placed.Count;
-            int total = boxes.Count;
+            c.PlacedCount = metrics.PlacedCount;
+            c.Height = metrics.Height;
+            c.EmptyVolume = Math.Max(0, metrics.BoundingVolume - metrics.PlacedVolume);
+            c.Fitness = ComputeFitness(metrics, boxes.Count, pallet);
+        }
 
+        private static DecodeMetrics Measure(IReadOnlyList<PlacedBox> placed, int totalBoxes, PalletSpec pallet)
+        {
             long placedVol = 0;
             int height = 0;
+
             for (int i = 0; i < placed.Count; i++)
             {
                 placedVol += placed[i].Volume;
@@ -264,12 +664,70 @@ namespace Palletes
             }
 
             long baseArea = (long)pallet.Length * pallet.Width;
-            long emptyVolume = baseArea * height - placedVol;
+            long boundingVolume = baseArea * height;
 
-            int penaltyHeight = pallet.MaxHeight > 0 ? pallet.MaxHeight : 2000;
-            long unplacedPenalty = (long)(total - placedCount) * (baseArea * penaltyHeight + 1);
-            return unplacedPenalty + Math.Max(0, emptyVolume);
+            return new DecodeMetrics(
+                placed.Count,
+                height,
+                placedVol,
+                boundingVolume,
+                CountSameSizeTouchingRuns(placed));
         }
+
+        private static double ComputeFitness(DecodeMetrics metrics, int totalBoxes, PalletSpec pallet)
+        {
+            double p1 = metrics.BoundingVolume > 0
+                ? (double)metrics.PlacedVolume / metrics.BoundingVolume
+                : 0.0;
+
+            double p2 = totalBoxes > 0
+                ? (double)metrics.PlacedCount / totalBoxes
+                : 0.0;
+
+            double p3 = metrics.PlacedCount > 1
+                ? (double)metrics.SameSizeTouchingCount / (metrics.PlacedCount - 1)
+                : 0.0;
+
+            long palletVolume = (long)pallet.Length * pallet.Width * pallet.MaxHeight;
+            double p4 = palletVolume > 0
+                ? (double)metrics.PlacedVolume / palletVolume
+                : p2;
+
+            const double q1 = 0.30;
+            const double q2 = 0.40;
+            const double q3 = 0.10;
+            const double q4 = 0.20;
+
+            double heightPenalty = pallet.MaxHeight > 0 && metrics.Height > 0
+                ? (double)metrics.Height / pallet.MaxHeight
+                : 0.0;
+
+            return q1 * p1 + q2 * p2 + q3 * p3 + q4 * p4 - 0.02 * heightPenalty;
+        }
+
+        private static int CountSameSizeTouchingRuns(IReadOnlyList<PlacedBox> placed)
+        {
+            int count = 0;
+            for (int i = 1; i < placed.Count; i++)
+            {
+                if (placed[i - 1].SizeKey == placed[i].SizeKey && TouchByFace(placed[i - 1], placed[i]))
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        private static bool TouchByFace(PlacedBox a, PlacedBox b)
+        {
+            bool touchX = (a.X == b.x || b.X == a.x) && OverlapStrict(a.y, a.Y, b.y, b.Y) && OverlapStrict(a.z, a.Z, b.z, b.Z);
+            bool touchY = (a.Y == b.y || b.Y == a.y) && OverlapStrict(a.x, a.X, b.x, b.X) && OverlapStrict(a.z, a.Z, b.z, b.Z);
+            bool touchZ = (a.Z == b.z || b.Z == a.z) && OverlapStrict(a.x, a.X, b.x, b.X) && OverlapStrict(a.y, a.Y, b.y, b.Y);
+            return touchX || touchY || touchZ;
+        }
+
+        private static bool OverlapStrict(int a1, int a2, int b1, int b2) => Math.Min(a2, b2) > Math.Max(a1, b1);
 
         private static List<PlacedBox> Decode(Chromosome c, IReadOnlyList<PackBox> boxes, PalletSpec pallet)
         {
@@ -281,45 +739,40 @@ namespace Palletes
             for (int pos = 0; pos < c.Order.Length; pos++)
             {
                 var box = boxes[c.Order[pos]];
-                byte oriGene = c.Orientation[c.Order[pos]];
+                byte ori = (byte)(c.Orientation[pos] % 6);
 
                 points.Sort(static (a, b) =>
                 {
+                    long da = (long)a.X * a.X + (long)a.Y * a.Y + (long)a.Z * a.Z;
+                    long db = (long)b.X * b.X + (long)b.Y * b.Y + (long)b.Z * b.Z;
+
+                    int d = da.CompareTo(db);
+                    if (d != 0) return d;
+
                     int z = a.Z.CompareTo(b.Z);
                     if (z != 0) return z;
+
                     int y = a.Y.CompareTo(b.Y);
                     if (y != 0) return y;
+
                     return a.X.CompareTo(b.X);
                 });
 
-                bool done = false;
+                var (l, w, h) = OrientedDims(box, ori);
 
-                for (int pi = 0; pi < points.Count && !done; pi++)
+                for (int pi = 0; pi < points.Count; pi++)
                 {
                     var p = points[pi];
+                    if (!Fits(p, l, w, h, placed, pallet))
+                        continue;
 
-                    for (int t = 0; t < 6; t++)
-                    {
-                        byte ori = (byte)((oriGene + t) % 6);
-                        var (L, W, H) = OrientedDims(box, ori);
+                    var pb = new PlacedBox(box, box.Id, p.X, p.Y, p.Z, p.X + l, p.Y + w, p.Z + h);
+                    placed.Add(pb);
 
-                        if (!Fits(p, L, W, H, placed, pallet))
-                            continue;
-
-                        int x = p.X;
-                        int y = p.Y;
-                        int z = p.Z;
-                        var pb = new PlacedBox(box.Id, x, y, z, x + L, y + W, z + H);
-                        placed.Add(pb);
-
-                        // consume point
-                        pointsSet.Remove(p);
-                        points.RemoveAt(pi);
-
-                        AddPoints(points, pointsSet, pallet, pb);
-                        done = true;
-                        break;
-                    }
+                    pointsSet.Remove(p);
+                    points.RemoveAt(pi);
+                    AddPoints(points, pointsSet, pallet, pb);
+                    break;
                 }
             }
 
@@ -349,8 +802,7 @@ namespace Palletes
             int X = x + L, Y = y + W, Z = z + H;
 
             if (x < 0 || y < 0 || z < 0) return false;
-            if (X > pallet.Length || Y > pallet.Width) return false;
-            if (pallet.MaxHeight > 0 && Z > pallet.MaxHeight) return false;
+            if (X > pallet.Length || Y > pallet.Width || Z > pallet.MaxHeight) return false;
 
             for (int i = 0; i < placed.Count; i++)
             {
@@ -361,8 +813,11 @@ namespace Palletes
 
             if (z == 0) return true;
 
-            // Relaxed support check: require that placement point touches the top face of some previously placed box.
-            return CornerSupported(x, y, z, placed);
+            return
+                CornerSupported(x, y, z, placed) &&
+                CornerSupported(X, y, z, placed) &&
+                CornerSupported(x, Y, z, placed) &&
+                CornerSupported(X, Y, z, placed);
         }
 
         private static bool CornerSupported(int cx, int cy, int z, List<PlacedBox> placed)
@@ -391,8 +846,7 @@ namespace Palletes
         private static void AddPoint(List<Int3> points, HashSet<Int3> pointsSet, PalletSpec pallet, int x, int y, int z)
         {
             if (x < 0 || y < 0 || z < 0) return;
-            if (x > pallet.Length || y > pallet.Width) return;
-            if (pallet.MaxHeight > 0 && z > pallet.MaxHeight) return;
+            if (x > pallet.Length || y > pallet.Width || z > pallet.MaxHeight) return;
 
             var p = new Int3(x, y, z);
             if (pointsSet.Add(p)) points.Add(p);
@@ -416,41 +870,96 @@ namespace Palletes
             return boxes;
         }
 
-        private static void WritePackingCsv(string path, PalletSpec pallet, IReadOnlyList<BoxPlacement> placements)
+        private static void WritePackingCsv(
+            string path,
+            PalletSpec pallet,
+            ContainerSpec? container,
+            IReadOnlyList<PackedContainer> containers)
         {
-            long usedHeight = 0;
-            for (int i = 0; i < placements.Count; i++)
-            {
-                var z = (long)Math.Round(placements[i].Z);
-                if (z > usedHeight) usedHeight = z;
-            }
-
-            long hToWrite = pallet.MaxHeight > 0 ? pallet.MaxHeight : usedHeight;
-
             using var sw = new StreamWriter(path);
-            sw.WriteLine(string.Join(",",
-                "PALLET",
-                pallet.PalletType,
-                "0",
-                "0",
-                "0",
-                pallet.Length.ToString(CultureInfo.InvariantCulture),
-                pallet.Width.ToString(CultureInfo.InvariantCulture),
-                hToWrite.ToString(CultureInfo.InvariantCulture)));
 
-            sw.WriteLine("ID,x,y,z,X,Y,Z");
-
-            foreach (var b in placements)
+            if (container is not null)
             {
                 sw.WriteLine(string.Join(",",
-                    b.Id,
-                    b.x.ToString(CultureInfo.InvariantCulture),
-                    b.y.ToString(CultureInfo.InvariantCulture),
-                    b.z.ToString(CultureInfo.InvariantCulture),
-                    b.X.ToString(CultureInfo.InvariantCulture),
-                    b.Y.ToString(CultureInfo.InvariantCulture),
-                    b.Z.ToString(CultureInfo.InvariantCulture)));
+                    "CONTAINER",
+                    containers[0].ContainerId,
+                    "0",
+                    "0",
+                    "0",
+                    container.Length.ToString(CultureInfo.InvariantCulture),
+                    container.Width.ToString(CultureInfo.InvariantCulture),
+                    container.Height.ToString(CultureInfo.InvariantCulture)));
+
+                for (int i = 1; i < containers.Count; i++)
+                {
+                    sw.WriteLine(string.Join(",",
+                        "CONTAINER",
+                        containers[i].ContainerId,
+                        "0",
+                        "0",
+                        "0",
+                        container.Length.ToString(CultureInfo.InvariantCulture),
+                        container.Width.ToString(CultureInfo.InvariantCulture),
+                        container.Height.ToString(CultureInfo.InvariantCulture)));
+                }
             }
+
+            foreach (var packedContainer in containers)
+            {
+                foreach (var packedPallet in packedContainer.Pallets)
+                {
+                    sw.WriteLine(string.Join(",",
+                        "PALLET",
+                        packedPallet.PalletId,
+                        packedPallet.OriginX.ToString(CultureInfo.InvariantCulture),
+                        packedPallet.OriginY.ToString(CultureInfo.InvariantCulture),
+                        packedPallet.OriginZ.ToString(CultureInfo.InvariantCulture),
+                        packedPallet.FootprintLength.ToString(CultureInfo.InvariantCulture),
+                        packedPallet.FootprintWidth.ToString(CultureInfo.InvariantCulture),
+                        pallet.MaxHeight.ToString(CultureInfo.InvariantCulture),
+                        packedPallet.ContainerId));
+                }
+            }
+
+            sw.WriteLine("ID,PalletId,x,y,z,X,Y,Z");
+
+            foreach (var packedContainer in containers)
+            {
+                foreach (var packedPallet in packedContainer.Pallets)
+                {
+                    foreach (var b in packedPallet.Boxes)
+                    {
+                        var (x1, y1, x2, y2) = TransformToContainerXY(b, packedPallet, pallet);
+                        sw.WriteLine(string.Join(",",
+                            b.Id,
+                            packedPallet.PalletId,
+                            x1.ToString(CultureInfo.InvariantCulture),
+                            y1.ToString(CultureInfo.InvariantCulture),
+                            (packedPallet.OriginZ + b.z).ToString(CultureInfo.InvariantCulture),
+                            x2.ToString(CultureInfo.InvariantCulture),
+                            y2.ToString(CultureInfo.InvariantCulture),
+                            (packedPallet.OriginZ + b.Z).ToString(CultureInfo.InvariantCulture)));
+                    }
+                }
+            }
+        }
+
+        private static (int x1, int y1, int x2, int y2) TransformToContainerXY(PlacedBox box, PackedPallet pallet, PalletSpec palletSpec)
+        {
+            if (!pallet.RotatedOnFloor)
+            {
+                return (
+                    pallet.OriginX + box.x,
+                    pallet.OriginY + box.y,
+                    pallet.OriginX + box.X,
+                    pallet.OriginY + box.Y);
+            }
+
+            int x1 = pallet.OriginX + box.y;
+            int x2 = pallet.OriginX + box.Y;
+            int y1 = pallet.OriginY + (palletSpec.Length - box.X);
+            int y2 = pallet.OriginY + (palletSpec.Length - box.x);
+            return (x1, y1, x2, y2);
         }
     }
 }

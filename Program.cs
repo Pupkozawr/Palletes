@@ -21,7 +21,15 @@ namespace Palletes
                 PalletType = generationPallet.PalletType,
                 Length = generationPallet.Length,
                 Width = generationPallet.Width,
-                MaxHeight = 0
+                MaxHeight = generationPallet.MaxHeight
+            };
+
+            var packingContainer = new ContainerSpec
+            {
+                ContainerType = "UK-3",
+                Length = 1930,
+                Width = 1225,
+                Height = 2128
             };
 
             if (args.Length >= 1 && string.Equals(args[0], "pack", StringComparison.OrdinalIgnoreCase))
@@ -37,7 +45,7 @@ namespace Palletes
                 var seed = args.Length >= 4 && int.TryParse(args[3], out var s) ? s : 12345;
 
                 var sw = Stopwatch.StartNew();
-                GeneticPalletPacker.PackCsv(inPath, outPath, packingPallet, seed);
+                GeneticPalletPacker.PackCsv(inPath, outPath, packingPallet, packingContainer, seed);
                 sw.Stop();
 
                 Console.WriteLine($"Packed. Seed={seed}. Output: {Path.GetFullPath(outPath)}");
@@ -65,7 +73,7 @@ namespace Palletes
                 var seed = args.Length >= 3 && int.TryParse(args[2], out var s2) ? s2 : 12345;
                 var maxOrders = args.Length >= 4 && int.TryParse(args[3], out var m) ? m : int.MaxValue;
 
-                return GeneratedPackingTestRunner.Run(outDir, seed, maxOrders, generationPallet, packingPallet);
+                return GeneratedPackingTestRunner.Run(outDir, seed, maxOrders, generationPallet, packingPallet, packingContainer);
             }
 
             var defaultOutDir = args.Length >= 1 ? args[0] : "out";

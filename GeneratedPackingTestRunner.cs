@@ -8,7 +8,7 @@ namespace Palletes
 {
     public static class GeneratedPackingTestRunner
     {
-        public static int Run(string outDir, int seed, int maxOrders, PalletSpec generationPallet, PalletSpec packingPallet)
+        public static int Run(string outDir, int seed, int maxOrders, PalletSpec generationPallet, PalletSpec packingPallet, ContainerSpec? packingContainer = null)
         {
             Directory.CreateDirectory(outDir);
 
@@ -42,27 +42,44 @@ namespace Palletes
                 try
                 {
                     var oneSw = Stopwatch.StartNew();
-                    GeneticPalletPacker.PackCsv(inPath, outPath, packingPallet, seed);
+                    if (packingContainer is null)
+                    {
+                        GeneticPalletPacker.PackCsv(inPath, outPath, packingPallet, seed);
+                    }
+                    else
+                    {
+                        GeneticPalletPacker.PackCsv(inPath, outPath, packingPallet, packingContainer, seed);
+                    }
                     oneSw.Stop();
 
                     var vr = PackingCsvValidator.ReadPackingCsv(outPath);
-                    long h = vr.Boxes.Count == 0 ? 0 : (long)Math.Round(vr.Boxes.Max(b => b.Z));
+                    var byPallet = vr.Boxes
+                        .GroupBy(b => string.IsNullOrWhiteSpace(b.PalletId) ? packingPallet.PalletType : b.PalletId, StringComparer.Ordinal)
+                        .ToList();
 
-                    long vol = 0;
-                    foreach (var b in vr.Boxes)
-                    {
-                        vol += (long)Math.Round(b.Dx) * (long)Math.Round(b.Dy) * (long)Math.Round(b.Dz);
-                    }
-
+                    long h = 0;
+                    long empty = 0;
                     long baseArea = (long)packingPallet.Length * packingPallet.Width;
-                    long empty = baseArea * h - vol;
+
+                    foreach (var palletBoxes in byPallet)
+                    {
+                        long palletHeight = palletBoxes.Any() ? (long)Math.Round(palletBoxes.Max(b => b.Z)) : 0;
+                        long palletVol = 0;
+                        foreach (var b in palletBoxes)
+                        {
+                            palletVol += (long)Math.Round(b.Dx) * (long)Math.Round(b.Dy) * (long)Math.Round(b.Dz);
+                        }
+
+                        if (palletHeight > h) h = palletHeight;
+                        empty += Math.Max(0, baseArea * palletHeight - palletVol);
+                    }
 
                     ok++;
                     sumHeight += h;
                     if (h > maxHeightSeen) maxHeightSeen = h;
-                    sumEmptyVolume += Math.Max(0, empty);
+                    sumEmptyVolume += empty;
 
-                    Console.WriteLine($"OK  {orderName}: boxes={vr.Boxes.Count} height={h} empty={Math.Max(0, empty)} time={oneSw.ElapsedMilliseconds}ms");
+                    Console.WriteLine($"OK  {orderName}: boxes={vr.Boxes.Count} pallets={Math.Max(1, byPallet.Count)} height={h} empty={empty} time={oneSw.ElapsedMilliseconds}ms");
                 }
                 catch (Exception ex)
                 {
