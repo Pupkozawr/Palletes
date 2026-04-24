@@ -2,8 +2,10 @@
 using System.Collections.Generic;
 using System.IO;
 
-public sealed class ValidationReport
+namespace Palletes.Models
 {
+    public sealed class ValidationReport
+    {
     public int ErrorCount => Errors.Count;
     public List<string> Errors { get; } = new();
 
@@ -26,5 +28,6 @@ public sealed class ValidationReport
         {
             File.AppendAllText(LogFilePath!, message + Environment.NewLine);
         }
+    }
     }
 }

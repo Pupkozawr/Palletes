@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Palletes
+namespace Palletes.Generation
 {
     public sealed class Rng
     {

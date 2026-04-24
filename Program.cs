@@ -1,5 +1,10 @@
-﻿using Palletes;
+﻿using System;
 using System.Diagnostics;
+using System.IO;
+using Palletes.Core;
+using Palletes.Generation;
+using Palletes.Models;
+using Palletes.Testing;
 
 namespace Palletes
 {

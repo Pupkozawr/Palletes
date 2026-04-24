@@ -3,8 +3,11 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using Palletes.Generation;
+using Palletes.Models;
+using Palletes.Utils;
 
-namespace Palletes
+namespace Palletes.Core
 {
     public static class GeneticPalletPacker
     {

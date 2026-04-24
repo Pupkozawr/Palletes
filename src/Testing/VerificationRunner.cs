@@ -1,8 +1,10 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using Palletes.Core;
+using Palletes.Models;
 
-namespace Palletes
+namespace Palletes.Testing
 {
     public static class VerificationRunner
     {
