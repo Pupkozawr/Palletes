@@ -3,8 +3,11 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using Palletes.Core;
+using Palletes.Generation;
+using Palletes.Models;
 
-namespace Palletes
+namespace Palletes.Testing
 {
     public static class GeneratedPackingTestRunner
     {

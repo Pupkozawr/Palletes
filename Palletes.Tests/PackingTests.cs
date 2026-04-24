@@ -1,5 +1,6 @@
 using System.Globalization;
-using Palletes;
+using Palletes.Core;
+using Palletes.Models;
 using Xunit;
 
 namespace Palletes.Tests;
