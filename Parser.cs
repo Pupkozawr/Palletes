@@ -4,18 +4,6 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-public class ItemRow
-{
-    public int SKU { get; set; }
-    public int Quantity { get; set; }
-    public int Length { get; set; }
-    public int Width { get; set; }
-    public int Height { get; set; }
-    public int Weight { get; set; }
-    public int Strength { get; set; }
-    public int Aisle { get; set; }
-    public int Caustic { get; set; }
-}
 namespace Palletes
 {
 
