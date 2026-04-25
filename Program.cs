@@ -92,12 +92,35 @@ namespace Palletes
             var defaultGen = new DatasetGenerator(defaultProfile, generationPallet, defaultRng);
             var totalStopwatch = Stopwatch.StartNew();
 
+            Console.WriteLine("=== Генерация тестовых данных ===");
             defaultGen.GenerateAll(defaultOutDir);
 
             totalStopwatch.Stop();
 
-            Console.WriteLine($"Done. Seed={genSeed}. Output: {Path.GetFullPath(defaultOutDir)}");
-            Console.WriteLine($"Total generation time: {totalStopwatch.ElapsedMilliseconds} ms ({totalStopwatch.Elapsed:hh\\:mm\\:ss\\.fff})");
+            Console.WriteLine($"Генерация завершена. Seed={genSeed}. Output: {Path.GetFullPath(defaultOutDir)}");
+            Console.WriteLine($"Время генерации: {totalStopwatch.ElapsedMilliseconds} ms ({totalStopwatch.Elapsed:hh\\:mm\\:ss\\.fff})");
+            Console.WriteLine();
+
+            Console.WriteLine("=== Запуск алгоритма упаковки ===");
+            var firstOrderDir = Path.Combine(defaultOutDir, "group1", "1");
+            var inputCsv = Path.Combine(firstOrderDir, "1.csv");
+            var outputCsv = Path.Combine(defaultOutDir, "1-packed-out-container.csv");
+
+            if (File.Exists(inputCsv))
+            {
+                var packStopwatch = Stopwatch.StartNew();
+                GeneticPalletPacker.PackCsv(inputCsv, outputCsv, packingPallet, packingContainer, genSeed);
+                packStopwatch.Stop();
+
+                Console.WriteLine($"Упаковка завершена. Seed={genSeed}");
+                Console.WriteLine($"Входной файл: {Path.GetFullPath(inputCsv)}");
+                Console.WriteLine($"Выходной файл: {Path.GetFullPath(outputCsv)}");
+                Console.WriteLine($"Время упаковки: {packStopwatch.ElapsedMilliseconds} ms ({packStopwatch.Elapsed:hh\\:mm\\:ss\\.fff})");
+            }
+            else
+            {
+                Console.WriteLine($"Предупреждение: не найден файл {inputCsv} для упаковки");
+            }
 
             return 0;
         }
