@@ -72,7 +72,6 @@ public sealed class PackingTests
     {
         var pallet = DefaultPallet();
 
-        // 50 cubes 200x200x200: should fit in <= 4 layers (<= 800mm height) on 1200x800.
         var boxes = new List<(string Id, int L, int W, int H)>(capacity: 50);
         for (int i = 1; i <= 50; i++)
         {
@@ -99,14 +98,11 @@ public sealed class PackingTests
         var inPath = Path.Combine(tempDir, "in.csv");
         var outPath = Path.Combine(tempDir, "out.csv");
 
-        // Format compatible with ItemRow.ParseSimple.
         var lines = new List<string>
         {
             "1",
             "SKU,Quantity,Length,Width,Height,Weight,Strength,Aisle,Caustic",
-            // 12 cubes fill 1 layer exactly: 6x4 on 1200x800.
             string.Join(",", 700001, 12, 200, 200, 200, 0, 0, 0, 0, ""),
-            // plus a few more cubes for extra layers.
             string.Join(",", 700002, 10, 200, 200, 200, 0, 0, 0, 0, ""),
         };
 

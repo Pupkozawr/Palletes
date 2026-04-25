@@ -20,7 +20,6 @@ namespace Palletes
                 MaxHeight = 2000
             };
 
-            // Packing pallet: MaxHeight=0 means "no max height"; algorithm will minimize height.
             var packingPallet = new PalletSpec
             {
                 PalletType = generationPallet.PalletType,
