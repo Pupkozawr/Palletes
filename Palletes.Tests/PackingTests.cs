@@ -193,4 +193,74 @@ public sealed class PackingTests
         PackingCsvValidator.ValidateNoOverlap(vr.Boxes, report, touchIsOk: true);
         Assert.True(report.ErrorCount == 0, string.Join("\n", report.Errors));
     }
+
+    [Fact]
+    public void PackCsv_RespectsPalletMaxWeight()
+    {
+        var pallet = DefaultPallet();
+        pallet.MaxHeight = 200;
+        pallet.MaxWeight = 3000;
+
+        var tempDir = Path.Combine(Path.GetTempPath(), "Palletes.Tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        var inPath = Path.Combine(tempDir, "in.csv");
+        var outPath = Path.Combine(tempDir, "out.csv");
+
+        var lines = new List<string>
+        {
+            "1",
+            "SKU,Quantity,Length,Width,Height,Weight,Strength,Aisle,Caustic",
+            string.Join(",", 700005, 4, 200, 200, 200, 2000, 5, 1, 0, ""),
+        };
+
+        File.WriteAllLines(inPath, lines);
+
+        GeneticPalletPacker.PackCsv(inPath, outPath, pallet, seed: 23);
+
+        var vr = PackingCsvValidator.ReadPackingCsv(outPath);
+        Assert.Equal(4, vr.Boxes.Count);
+        Assert.Equal(4, vr.Pallets.Count);
+
+        var report = new ValidationReport();
+        PackingCsvValidator.ValidateBasic(vr.Boxes, report);
+        PackingCsvValidator.ValidateInsidePallet(vr.Boxes, vr.Pallets, report);
+        PackingCsvValidator.ValidateNoOverlap(vr.Boxes, report, touchIsOk: true);
+        Assert.True(report.ErrorCount == 0, string.Join("\n", report.Errors));
+    }
+
+    [Fact]
+    public void PackCsv_DoesNotStackCausticAndRegularItemsTogether()
+    {
+        var pallet = DefaultPallet();
+        pallet.MaxHeight = 300;
+
+        var tempDir = Path.Combine(Path.GetTempPath(), "Palletes.Tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(tempDir);
+
+        var inPath = Path.Combine(tempDir, "in.csv");
+        var outPath = Path.Combine(tempDir, "out.csv");
+
+        var lines = new List<string>
+        {
+            "1",
+            "SKU,Quantity,Length,Width,Height,Weight,Strength,Aisle,Caustic",
+            string.Join(",", 700006, 1, 1200, 800, 100, 1000, 5, 1, 0, ""),
+            string.Join(",", 700007, 1, 1200, 800, 100, 1000, 5, 1, 1, ""),
+        };
+
+        File.WriteAllLines(inPath, lines);
+
+        GeneticPalletPacker.PackCsv(inPath, outPath, pallet, seed: 29);
+
+        var vr = PackingCsvValidator.ReadPackingCsv(outPath);
+        Assert.Equal(2, vr.Boxes.Count);
+        Assert.Equal(2, vr.Pallets.Count);
+
+        var report = new ValidationReport();
+        PackingCsvValidator.ValidateBasic(vr.Boxes, report);
+        PackingCsvValidator.ValidateInsidePallet(vr.Boxes, vr.Pallets, report);
+        PackingCsvValidator.ValidateNoOverlap(vr.Boxes, report, touchIsOk: true);
+        Assert.True(report.ErrorCount == 0, string.Join("\n", report.Errors));
+    }
 }

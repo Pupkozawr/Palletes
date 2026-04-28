@@ -12,6 +12,7 @@ namespace Palletes.Models
         public int Length { get; set; } = 1200;
         public int Width { get; set; } = 800;
         public int MaxHeight { get; set; } = 2000;
+        public int MaxWeight { get; set; } = 0;
     }
 
     public sealed class ContainerSpec

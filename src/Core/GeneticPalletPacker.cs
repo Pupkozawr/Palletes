@@ -13,21 +13,60 @@ namespace Palletes.Core
     {
         private readonly record struct Int3(int X, int Y, int Z);
 
+        internal readonly record struct FitnessWeights(
+            string Name,
+            double Density,
+            double PlacedShare,
+            double Grouping,
+            double PalletVolumeUse,
+            double Stability,
+            double HeavyLow,
+            double HeightPenalty);
+
+        private const double Q1Density = 0.18;
+        private const double Q2PlacedShare = 0.52;
+        private const double Q3Grouping = 0.06;
+        private const double Q4PalletVolumeUse = 0.14;
+        private const double Q5Stability = 0.06;
+        private const double Q6HeavyLow = 0.04;
+        private const double HeightPenaltyWeight = 0.02;
+
+        private static readonly FitnessWeights DefaultWeights = new(
+            "placed_first",
+            Q1Density,
+            Q2PlacedShare,
+            Q3Grouping,
+            Q4PalletVolumeUse,
+            Q5Stability,
+            Q6HeavyLow,
+            HeightPenaltyWeight);
+
         private sealed class PackBox
         {
             public string Id { get; }
+            public string Sku { get; }
             public int L { get; }
             public int W { get; }
             public int H { get; }
+            public int WeightGrams { get; }
+            public int Strength { get; }
+            public int Aisle { get; }
+            public bool Caustic { get; }
             public long Volume => (long)L * W * H;
             public string SizeKey { get; }
+            public string TypeKey => string.IsNullOrWhiteSpace(Sku) ? SizeKey : Sku;
 
-            public PackBox(string id, int l, int w, int h)
+            public PackBox(string id, string sku, int l, int w, int h, int weightGrams = 0, int strength = 5, int aisle = 0, bool caustic = false)
             {
                 Id = id;
+                Sku = sku;
                 L = l;
                 W = w;
                 H = h;
+                WeightGrams = Math.Max(0, weightGrams);
+                Strength = Math.Clamp(strength, 0, 5);
+                Aisle = aisle;
+                Caustic = caustic;
 
                 var dims = new[] { l, w, h };
                 Array.Sort(dims);
@@ -42,6 +81,8 @@ namespace Palletes.Core
             public int Dz => Z - z;
             public long Volume => (long)Dx * Dy * Dz;
             public string SizeKey => Source.SizeKey;
+            public string TypeKey => Source.TypeKey;
+            public int WeightGrams => Source.WeightGrams;
         }
 
         private sealed class PackedPallet
@@ -55,6 +96,7 @@ namespace Palletes.Core
             public bool RotatedOnFloor { get; set; }
             public int FootprintLength { get; set; }
             public int FootprintWidth { get; set; }
+            public long TotalWeightGrams => Boxes.Sum(static b => (long)b.WeightGrams);
 
             public PackedPallet(string palletId, List<PlacedBox> boxes)
             {
@@ -81,7 +123,13 @@ namespace Palletes.Core
             int Height,
             long PlacedVolume,
             long BoundingVolume,
-            int SameSizeTouchingCount);
+            int SameTypeTouchingCount,
+            int SameAisleTouchingCount,
+            double StabilityScore,
+            double HeavyLowScore);
+
+        private const double MinSupportAreaRatio = 0.65;
+        private const int MinSupportCapacityGrams = 25_000;
 
         private sealed class Chromosome
         {
@@ -115,15 +163,33 @@ namespace Palletes.Core
             => PackCsv(inPath, outPath, pallet, container: null, seed);
 
         public static void PackCsv(string inPath, string outPath, PalletSpec pallet, ContainerSpec? container, int seed = 12345)
+            => PackCsvCore(inPath, outPath, pallet, container, seed, DefaultWeights);
+
+        internal static void PackCsvForExperiment(
+            string inPath,
+            string outPath,
+            PalletSpec pallet,
+            ContainerSpec? container,
+            int seed,
+            FitnessWeights weights)
+            => PackCsvCore(inPath, outPath, pallet, container, seed, NormalizeWeights(weights));
+
+        private static void PackCsvCore(
+            string inPath,
+            string outPath,
+            PalletSpec pallet,
+            ContainerSpec? container,
+            int seed,
+            FitnessWeights weights)
         {
             if (pallet.Length <= 0 || pallet.Width <= 0)
                 throw new ArgumentOutOfRangeException(nameof(pallet), "Pallet base dimensions must be positive.");
 
             var items = ItemRow.ParseSimple(inPath);
-            var boxes = ExpandBoxes(items).Select(b => new PackBox(b.Id, b.L, b.W, b.H)).ToList();
+            var boxes = ExpandBoxes(items);
             var effectivePallet = NormalizePallet(pallet);
 
-            var packedPallets = PackAcrossPallets(boxes, effectivePallet, seed);
+            var packedPallets = PackAcrossPallets(boxes, effectivePallet, seed, weights);
             List<PackedContainer> packedContainers;
             if (container is not null)
             {
@@ -165,9 +231,9 @@ namespace Palletes.Core
 
         public static List<BoxPlacement> Pack(IReadOnlyList<(string Id, int L, int W, int H)> boxes, PalletSpec pallet, int seed = 12345)
         {
-            var packBoxes = boxes.Select(b => new PackBox(b.Id, b.L, b.W, b.H)).ToList();
+            var packBoxes = boxes.Select(b => new PackBox(b.Id, b.Id, b.L, b.W, b.H)).ToList();
             var effectivePallet = NormalizePallet(pallet);
-            var placed = PackSinglePallet(packBoxes, effectivePallet, seed);
+            var placed = PackSinglePallet(packBoxes, effectivePallet, seed, DefaultWeights);
 
             if (placed.Count != packBoxes.Count)
                 throw new InvalidOperationException($"Could not place all boxes on a single pallet. Placed={placed.Count}, total={packBoxes.Count}.");
@@ -192,8 +258,42 @@ namespace Palletes.Core
                 PalletType = pallet.PalletType,
                 Length = pallet.Length,
                 Width = pallet.Width,
-                MaxHeight = pallet.MaxHeight > 0 ? pallet.MaxHeight : 2000
+                MaxHeight = pallet.MaxHeight > 0 ? pallet.MaxHeight : 2000,
+                MaxWeight = Math.Max(0, pallet.MaxWeight)
             };
+        }
+
+        private static FitnessWeights NormalizeWeights(FitnessWeights weights)
+        {
+            string name = string.IsNullOrWhiteSpace(weights.Name) ? "custom" : weights.Name;
+            double density = Math.Max(0.0, weights.Density);
+            double placedShare = Math.Max(0.0, weights.PlacedShare);
+            double grouping = Math.Max(0.0, weights.Grouping);
+            double palletVolumeUse = Math.Max(0.0, weights.PalletVolumeUse);
+            double stability = Math.Max(0.0, weights.Stability);
+            double heavyLow = Math.Max(0.0, weights.HeavyLow);
+            double heightPenalty = Math.Max(0.0, weights.HeightPenalty);
+
+            double sum =
+                density +
+                placedShare +
+                grouping +
+                palletVolumeUse +
+                stability +
+                heavyLow;
+
+            if (sum <= 0.0)
+                return DefaultWeights;
+
+            return new FitnessWeights(
+                name,
+                density / sum,
+                placedShare / sum,
+                grouping / sum,
+                palletVolumeUse / sum,
+                stability / sum,
+                heavyLow / sum,
+                heightPenalty);
         }
 
         private static ContainerSpec NormalizeContainer(ContainerSpec container)
@@ -207,10 +307,12 @@ namespace Palletes.Core
             };
         }
 
-        private static List<PackedPallet> PackAcrossPallets(IReadOnlyList<PackBox> boxes, PalletSpec pallet, int seed)
+        private static List<PackedPallet> PackAcrossPallets(IReadOnlyList<PackBox> boxes, PalletSpec pallet, int seed, FitnessWeights weights)
         {
             var remaining = boxes
                 .OrderByDescending(b => b.Volume)
+                .ThenByDescending(b => b.WeightGrams)
+                .ThenByDescending(b => b.Strength)
                 .ThenByDescending(b => Math.Max(b.L, Math.Max(b.W, b.H)))
                 .ToList();
 
@@ -219,7 +321,7 @@ namespace Palletes.Core
 
             while (remaining.Count > 0)
             {
-                var placed = PackSinglePallet(remaining, pallet, seed + palletIndex * 104729);
+                var placed = PackSinglePallet(remaining, pallet, seed + palletIndex * 104729, weights);
                 if (placed.Count == 0)
                 {
                     throw new InvalidOperationException($"Could not place any of the remaining {remaining.Count} boxes on pallet {palletIndex}.");
@@ -264,6 +366,7 @@ namespace Palletes.Core
             var result = new List<PackedContainer>();
             var order = pallets
                 .OrderByDescending(p => p.Boxes.Count)
+                .ThenByDescending(p => p.TotalWeightGrams)
                 .ThenBy(p => p.PalletId, StringComparer.Ordinal)
                 .ToList();
 
@@ -415,7 +518,7 @@ namespace Palletes.Core
             }
         }
 
-        private static List<PlacedBox> PackSinglePallet(IReadOnlyList<PackBox> boxes, PalletSpec pallet, int seed)
+        private static List<PlacedBox> PackSinglePallet(IReadOnlyList<PackBox> boxes, PalletSpec pallet, int seed, FitnessWeights weights)
         {
             int n = boxes.Count;
             if (n == 0) return new List<PlacedBox>();
@@ -428,18 +531,18 @@ namespace Palletes.Core
 
             var population = new Chromosome[populationSize];
             population[0] = CreateHeuristicChromosome(boxes, descendingVolume: true);
-            Evaluate(population[0], boxes, pallet);
+            Evaluate(population[0], boxes, pallet, weights);
 
             if (populationSize > 1)
             {
                 population[1] = CreateHeuristicChromosome(boxes, descendingVolume: false);
-                Evaluate(population[1], boxes, pallet);
+                Evaluate(population[1], boxes, pallet, weights);
             }
 
             for (int i = 2; i < populationSize; i++)
             {
                 population[i] = RandomChromosome(n, rng);
-                Evaluate(population[i], boxes, pallet);
+                Evaluate(population[i], boxes, pallet, weights);
             }
 
             Chromosome best = population.OrderByDescending(c => c.Fitness)
@@ -464,7 +567,7 @@ namespace Palletes.Core
 
                     var child = Crossover(p1, p2, rng);
                     Mutate(child, rng);
-                    Evaluate(child, boxes, pallet);
+                    Evaluate(child, boxes, pallet, weights);
                     next[i] = child;
                 }
 
@@ -511,6 +614,8 @@ namespace Palletes.Core
             var order = Enumerable.Range(0, boxes.Count)
                 .OrderBy(i => descendingVolume ? 0 : 1)
                 .ThenByDescending(i => descendingVolume ? boxes[i].Volume : (long)boxes[i].L * boxes[i].W)
+                .ThenByDescending(i => boxes[i].WeightGrams)
+                .ThenByDescending(i => boxes[i].Strength)
                 .ThenByDescending(i => boxes[i].H)
                 .ThenBy(i => boxes[i].Id, StringComparer.Ordinal)
                 .ToArray();
@@ -644,7 +749,7 @@ namespace Palletes.Core
             }
         }
 
-        private static void Evaluate(Chromosome c, IReadOnlyList<PackBox> boxes, PalletSpec pallet)
+        private static void Evaluate(Chromosome c, IReadOnlyList<PackBox> boxes, PalletSpec pallet, FitnessWeights weights)
         {
             var placed = Decode(c, boxes, pallet);
             var metrics = Measure(placed, boxes.Count, pallet);
@@ -652,7 +757,7 @@ namespace Palletes.Core
             c.PlacedCount = metrics.PlacedCount;
             c.Height = metrics.Height;
             c.EmptyVolume = Math.Max(0, metrics.BoundingVolume - metrics.PlacedVolume);
-            c.Fitness = ComputeFitness(metrics, boxes.Count, pallet);
+            c.Fitness = ComputeFitness(metrics, boxes.Count, pallet, weights);
         }
 
         private static DecodeMetrics Measure(IReadOnlyList<PlacedBox> placed, int totalBoxes, PalletSpec pallet)
@@ -674,10 +779,13 @@ namespace Palletes.Core
                 height,
                 placedVol,
                 boundingVolume,
-                CountSameSizeTouchingRuns(placed));
+                CountSameTypeTouchingRuns(placed),
+                CountSameAisleTouchingRuns(placed),
+                AverageSupportScore(placed),
+                ComputeHeavyLowScore(placed, pallet));
         }
 
-        private static double ComputeFitness(DecodeMetrics metrics, int totalBoxes, PalletSpec pallet)
+        private static double ComputeFitness(DecodeMetrics metrics, int totalBoxes, PalletSpec pallet, FitnessWeights weights)
         {
             double p1 = metrics.BoundingVolume > 0
                 ? (double)metrics.PlacedVolume / metrics.BoundingVolume
@@ -688,7 +796,7 @@ namespace Palletes.Core
                 : 0.0;
 
             double p3 = metrics.PlacedCount > 1
-                ? (double)metrics.SameSizeTouchingCount / (metrics.PlacedCount - 1)
+                ? Math.Min(1.0, (metrics.SameTypeTouchingCount + 0.35 * metrics.SameAisleTouchingCount) / (metrics.PlacedCount - 1.0))
                 : 0.0;
 
             long palletVolume = (long)pallet.Length * pallet.Width * pallet.MaxHeight;
@@ -696,30 +804,96 @@ namespace Palletes.Core
                 ? (double)metrics.PlacedVolume / palletVolume
                 : p2;
 
-            const double q1 = 0.30;
-            const double q2 = 0.40;
-            const double q3 = 0.10;
-            const double q4 = 0.20;
+            double p5 = metrics.StabilityScore;
+            double p6 = metrics.HeavyLowScore;
 
             double heightPenalty = pallet.MaxHeight > 0 && metrics.Height > 0
                 ? (double)metrics.Height / pallet.MaxHeight
                 : 0.0;
 
-            return q1 * p1 + q2 * p2 + q3 * p3 + q4 * p4 - 0.02 * heightPenalty;
+            return
+                weights.Density * p1 +
+                weights.PlacedShare * p2 +
+                weights.Grouping * p3 +
+                weights.PalletVolumeUse * p4 +
+                weights.Stability * p5 +
+                weights.HeavyLow * p6 -
+                weights.HeightPenalty * heightPenalty;
         }
 
-        private static int CountSameSizeTouchingRuns(IReadOnlyList<PlacedBox> placed)
+        private static int CountSameTypeTouchingRuns(IReadOnlyList<PlacedBox> placed)
         {
             int count = 0;
             for (int i = 1; i < placed.Count; i++)
             {
-                if (placed[i - 1].SizeKey == placed[i].SizeKey && TouchByFace(placed[i - 1], placed[i]))
+                if (placed[i - 1].TypeKey == placed[i].TypeKey && TouchByFace(placed[i - 1], placed[i]))
                 {
                     count++;
                 }
             }
 
             return count;
+        }
+
+        private static int CountSameAisleTouchingRuns(IReadOnlyList<PlacedBox> placed)
+        {
+            int count = 0;
+            for (int i = 1; i < placed.Count; i++)
+            {
+                if (placed[i - 1].Source.Aisle > 0 &&
+                    placed[i - 1].Source.Aisle == placed[i].Source.Aisle &&
+                    TouchByFace(placed[i - 1], placed[i]))
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        private static double AverageSupportScore(IReadOnlyList<PlacedBox> placed)
+        {
+            if (placed.Count == 0) return 0.0;
+
+            double sum = 0.0;
+            for (int i = 0; i < placed.Count; i++)
+            {
+                var b = placed[i];
+                if (b.z == 0)
+                {
+                    sum += 1.0;
+                    continue;
+                }
+
+                long footprint = (long)b.Dx * b.Dy;
+                if (footprint <= 0)
+                    continue;
+
+                long supportedArea = SupportArea(b.x, b.y, b.X, b.Y, b.z, placed, excludeIndex: i);
+                double ratio = Math.Min(1.0, supportedArea / (double)footprint);
+                bool centerSupported = IsPointSupported((b.x + b.X) / 2.0, (b.y + b.Y) / 2.0, b.z, placed, excludeIndex: i);
+                sum += centerSupported ? ratio : ratio * 0.5;
+            }
+
+            return sum / placed.Count;
+        }
+
+        private static double ComputeHeavyLowScore(IReadOnlyList<PlacedBox> placed, PalletSpec pallet)
+        {
+            long totalWeight = placed.Sum(static b => (long)b.WeightGrams);
+            if (placed.Count == 0 || totalWeight <= 0 || pallet.MaxHeight <= 0)
+                return 1.0;
+
+            double weightedCenterHeight = 0.0;
+            for (int i = 0; i < placed.Count; i++)
+            {
+                var b = placed[i];
+                double centerZ = (b.z + b.Z) / 2.0;
+                weightedCenterHeight += centerZ * b.WeightGrams;
+            }
+
+            double normalized = weightedCenterHeight / totalWeight / pallet.MaxHeight;
+            return Math.Clamp(1.0 - normalized, 0.0, 1.0);
         }
 
         private static bool TouchByFace(PlacedBox a, PlacedBox b)
@@ -738,6 +912,7 @@ namespace Palletes.Core
 
             var points = new List<Int3>(1 + boxes.Count * 7) { new Int3(0, 0, 0) };
             var pointsSet = new HashSet<Int3> { new Int3(0, 0, 0) };
+            long placedWeightGrams = 0;
 
             for (int pos = 0; pos < c.Order.Length; pos++)
             {
@@ -766,11 +941,12 @@ namespace Palletes.Core
                 for (int pi = 0; pi < points.Count; pi++)
                 {
                     var p = points[pi];
-                    if (!Fits(p, l, w, h, placed, pallet))
+                    if (!Fits(box, p, l, w, h, placed, placedWeightGrams, pallet))
                         continue;
 
                     var pb = new PlacedBox(box, box.Id, p.X, p.Y, p.Z, p.X + l, p.Y + w, p.Z + h);
                     placed.Add(pb);
+                    placedWeightGrams += box.WeightGrams;
 
                     pointsSet.Remove(p);
                     points.RemoveAt(pi);
@@ -797,7 +973,7 @@ namespace Palletes.Core
             };
         }
 
-        private static bool Fits(Int3 p, int L, int W, int H, List<PlacedBox> placed, PalletSpec pallet)
+        private static bool Fits(PackBox box, Int3 p, int L, int W, int H, List<PlacedBox> placed, long placedWeightGrams, PalletSpec pallet)
         {
             if (L <= 0 || W <= 0 || H <= 0) return false;
 
@@ -806,6 +982,12 @@ namespace Palletes.Core
 
             if (x < 0 || y < 0 || z < 0) return false;
             if (X > pallet.Length || Y > pallet.Width || Z > pallet.MaxHeight) return false;
+
+            if (pallet.MaxWeight > 0)
+            {
+                if (placedWeightGrams + box.WeightGrams > pallet.MaxWeight)
+                    return false;
+            }
 
             for (int i = 0; i < placed.Count; i++)
             {
@@ -816,11 +998,23 @@ namespace Palletes.Core
 
             if (z == 0) return true;
 
-            return
-                CornerSupported(x, y, z, placed) &&
-                CornerSupported(X, y, z, placed) &&
-                CornerSupported(x, Y, z, placed) &&
-                CornerSupported(X, Y, z, placed);
+            if (!CornerSupported(x, y, z, placed) ||
+                !CornerSupported(X, y, z, placed) ||
+                !CornerSupported(x, Y, z, placed) ||
+                !CornerSupported(X, Y, z, placed))
+            {
+                return false;
+            }
+
+            long footprintArea = (long)L * W;
+            long supportedArea = SupportArea(x, y, X, Y, z, placed);
+            if (footprintArea <= 0 || supportedArea / (double)footprintArea < MinSupportAreaRatio)
+                return false;
+
+            if (!IsPointSupported((x + X) / 2.0, (y + Y) / 2.0, z, placed))
+                return false;
+
+            return SupportsCanCarry(box, x, y, X, Y, z, placed);
         }
 
         private static bool CornerSupported(int cx, int cy, int z, List<PlacedBox> placed)
@@ -833,6 +1027,105 @@ namespace Palletes.Core
                     return true;
             }
             return false;
+        }
+
+        private static long SupportArea(int x, int y, int X, int Y, int z, IReadOnlyList<PlacedBox> placed, int excludeIndex = -1)
+        {
+            long area = 0;
+            for (int i = 0; i < placed.Count; i++)
+            {
+                if (i == excludeIndex) continue;
+
+                var b = placed[i];
+                if (b.Z != z) continue;
+
+                area += OverlapArea(x, y, X, Y, b.x, b.y, b.X, b.Y);
+            }
+
+            return area;
+        }
+
+        private static bool IsPointSupported(double cx, double cy, int z, IReadOnlyList<PlacedBox> placed, int excludeIndex = -1)
+        {
+            for (int i = 0; i < placed.Count; i++)
+            {
+                if (i == excludeIndex) continue;
+
+                var b = placed[i];
+                if (b.Z != z) continue;
+                if (cx >= b.x && cx <= b.X && cy >= b.y && cy <= b.Y)
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static bool SupportsCanCarry(PackBox top, int x, int y, int X, int Y, int z, IReadOnlyList<PlacedBox> placed)
+        {
+            long supportedArea = SupportArea(x, y, X, Y, z, placed);
+            if (supportedArea <= 0)
+                return false;
+
+            for (int i = 0; i < placed.Count; i++)
+            {
+                var support = placed[i];
+                if (support.Z != z) continue;
+
+                long overlapArea = OverlapArea(x, y, X, Y, support.x, support.y, support.X, support.Y);
+                if (overlapArea <= 0) continue;
+
+                if (!CanStackOn(top, support.Source))
+                    return false;
+
+                if (top.WeightGrams <= 0)
+                    continue;
+
+                long addedLoad = ProportionalLoad(top.WeightGrams, overlapArea, supportedArea);
+                if (addedLoad > SupportCapacityGrams(support.Source))
+                    return false;
+            }
+
+            return true;
+        }
+
+        private static bool CanStackOn(PackBox top, PackBox support)
+        {
+            if (top.Caustic != support.Caustic)
+                return false;
+
+            if (top.WeightGrams > 0 && support.WeightGrams > 0 && support.Strength <= 2)
+            {
+                long allowedSingleTop = support.WeightGrams * 4L;
+                if (top.WeightGrams > allowedSingleTop)
+                    return false;
+            }
+
+            return true;
+        }
+
+        private static long SupportCapacityGrams(PackBox support)
+        {
+            if (support.WeightGrams <= 0)
+                return long.MaxValue / 4;
+
+            int strength = Math.Max(1, support.Strength);
+            long byStrength = support.WeightGrams * (2L + 2L * strength);
+            return Math.Max(MinSupportCapacityGrams, byStrength);
+        }
+
+        private static long ProportionalLoad(int weightGrams, long overlapArea, long totalArea)
+        {
+            if (weightGrams <= 0 || overlapArea <= 0 || totalArea <= 0)
+                return 0;
+
+            return (long)Math.Ceiling(weightGrams * (overlapArea / (double)totalArea));
+        }
+
+        private static long OverlapArea(int ax1, int ay1, int ax2, int ay2, int bx1, int by1, int bx2, int by2)
+        {
+            int dx = Math.Min(ax2, bx2) - Math.Max(ax1, bx1);
+            int dy = Math.Min(ay2, by2) - Math.Max(ay1, by1);
+            return dx > 0 && dy > 0 ? (long)dx * dy : 0;
         }
 
         private static void AddPoints(List<Int3> points, HashSet<Int3> pointsSet, PalletSpec pallet, PlacedBox b)
@@ -855,9 +1148,9 @@ namespace Palletes.Core
             if (pointsSet.Add(p)) points.Add(p);
         }
 
-        private static List<(string Id, int L, int W, int H)> ExpandBoxes(List<ItemRow> items)
+        private static List<PackBox> ExpandBoxes(List<ItemRow> items)
         {
-            var boxes = new List<(string Id, int L, int W, int H)>();
+            var boxes = new List<PackBox>();
 
             foreach (var it in items)
             {
@@ -866,7 +1159,17 @@ namespace Palletes.Core
                 for (int k = 1; k <= it.Quantity; k++)
                 {
                     string id = it.Quantity == 1 ? it.SKU.ToString(CultureInfo.InvariantCulture) : $"{it.SKU}_{k}";
-                    boxes.Add((id, it.Length, it.Width, it.Height));
+                    string sku = it.SKU.ToString(CultureInfo.InvariantCulture);
+                    boxes.Add(new PackBox(
+                        id,
+                        sku,
+                        it.Length,
+                        it.Width,
+                        it.Height,
+                        it.Weight,
+                        it.Strength,
+                        it.Aisle,
+                        it.Caustic != 0));
                 }
             }
 

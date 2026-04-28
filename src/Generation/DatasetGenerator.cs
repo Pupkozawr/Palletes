@@ -486,7 +486,7 @@ namespace Palletes.Generation
 
             if (diversifyKey.HasValue)
             {
-                int noise = (diversifyKey.Value % 7) - 3; // -3..+3
+                int noise = (diversifyKey.Value % 7) - 3;
                 l = Clamp(l + noise * 7, 50, 2000);
                 w = Clamp(w - noise * 5, 50, 2000);
                 h = Clamp(h + noise * 3, 20, 2000);
@@ -524,7 +524,7 @@ namespace Palletes.Generation
             }
             if (r < 0.55)
             {
-                return (_rng.Int(450, 1000), _rng.Int(80, 180), _rng.Int(80, 250)); // elongated slim
+                return (_rng.Int(450, 1000), _rng.Int(80, 180), _rng.Int(80, 250));
             }
             if (r < 0.75)
             {

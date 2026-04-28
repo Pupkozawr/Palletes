@@ -80,6 +80,16 @@ namespace Palletes
                 return GeneratedPackingTestRunner.Run(outDir, seed, maxOrders, generationPallet, packingPallet, packingContainer);
             }
 
+            if (args.Length >= 1 && string.Equals(args[0], "tune", StringComparison.OrdinalIgnoreCase))
+            {
+                var outDir = args.Length >= 2 ? args[1] : "out-tune";
+                var seed = args.Length >= 3 && int.TryParse(args[2], out var ts) ? ts : 12345;
+                var maxOrders = args.Length >= 4 && int.TryParse(args[3], out var tm) ? tm : 6;
+                var seedRuns = args.Length >= 5 && int.TryParse(args[4], out var tr) ? tr : 1;
+
+                return FitnessWeightExperimentRunner.Run(outDir, seed, maxOrders, seedRuns, generationPallet, packingPallet, packingContainer);
+            }
+
             var defaultOutDir = args.Length >= 1 ? args[0] : "out";
             var genSeed = args.Length >= 2 && int.TryParse(args[1], out var s3) ? s3 : 12345;
 
