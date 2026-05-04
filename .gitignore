@@ -367,4 +367,8 @@ FodyWeavers.xsd
 reshenie-zadachi-trehmernoy-upakovki-s-paletirovaniem-konteynerov.pdf
 
 # Local generated outputs from this repo
+out-*/
 out-verify/
+*-dashboard.png
+check-out.png
+seed-results.txt

@@ -1,12 +1,58 @@
 using System.Globalization;
 using Palletes.Core;
+using Palletes.Generation;
 using Palletes.Models;
+using Palletes.Utils;
 using Xunit;
 
 namespace Palletes.Tests;
 
 public sealed class PackingTests
 {
+    private readonly record struct TestSku(
+        int Sku,
+        int Quantity,
+        int Length,
+        int Width,
+        int Height,
+        int Weight = 0,
+        int Strength = 0,
+        int Aisle = 0,
+        int Caustic = 0);
+
+    private sealed class TestWorkspace : IDisposable
+    {
+        public string Root { get; } = Path.Combine(Path.GetTempPath(), "Palletes.Tests", Guid.NewGuid().ToString("N"));
+
+        public TestWorkspace()
+        {
+            Directory.CreateDirectory(Root);
+        }
+
+        public string PathFor(params string[] parts)
+        {
+            var path = parts.Aggregate(Root, Path.Combine);
+            var directory = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(directory))
+                Directory.CreateDirectory(directory);
+
+            return path;
+        }
+
+        public void Dispose()
+        {
+            try
+            {
+                if (Directory.Exists(Root))
+                    Directory.Delete(Root, recursive: true);
+            }
+            catch
+            {
+                // Best-effort cleanup for local test artifacts.
+            }
+        }
+    }
+
     private static PalletSpec DefaultPallet() => new()
     {
         PalletType = "EUR",
@@ -35,6 +81,32 @@ public sealed class PackingTests
         Height = 2128
     };
 
+    private static void WriteOrderCsv(string path, params TestSku[] rows)
+    {
+        var lines = new List<string>
+        {
+            "1",
+            "SKU,Quantity,Length,Width,Height,Weight,Strength,Aisle,Caustic"
+        };
+
+        foreach (var row in rows)
+        {
+            lines.Add(string.Join(",",
+                row.Sku.ToString(CultureInfo.InvariantCulture),
+                row.Quantity.ToString(CultureInfo.InvariantCulture),
+                row.Length.ToString(CultureInfo.InvariantCulture),
+                row.Width.ToString(CultureInfo.InvariantCulture),
+                row.Height.ToString(CultureInfo.InvariantCulture),
+                row.Weight.ToString(CultureInfo.InvariantCulture),
+                row.Strength.ToString(CultureInfo.InvariantCulture),
+                row.Aisle.ToString(CultureInfo.InvariantCulture),
+                row.Caustic.ToString(CultureInfo.InvariantCulture),
+                ""));
+        }
+
+        File.WriteAllLines(path, lines);
+    }
+
     private static void AssertValidPacking(IReadOnlyList<BoxPlacement> placements, PalletSpec pallet)
     {
         var report = new ValidationReport();
@@ -43,6 +115,25 @@ public sealed class PackingTests
         PackingCsvValidator.ValidateInsidePallet(placements, ToMeta(pallet), report);
         PackingCsvValidator.ValidateNoOverlap(placements, report, touchIsOk: true);
 
+        Assert.True(report.ErrorCount == 0, string.Join("\n", report.Errors));
+    }
+
+    private static void AssertValidPacking(ValidationResult result)
+    {
+        var report = new ValidationReport();
+
+        PackingCsvValidator.ValidateBasic(result.Boxes, report);
+        PackingCsvValidator.ValidatePalletsInsideContainers(result.Pallets, result.Containers, report);
+        if (result.Pallets.Count > 0)
+        {
+            PackingCsvValidator.ValidateInsidePallet(result.Boxes, result.Pallets, report);
+        }
+        else if (result.Pallet is not null)
+        {
+            PackingCsvValidator.ValidateInsidePallet(result.Boxes, result.Pallet, report);
+        }
+
+        PackingCsvValidator.ValidateNoOverlap(result.Boxes, report, touchIsOk: true);
         Assert.True(report.ErrorCount == 0, string.Join("\n", report.Errors));
     }
 
@@ -88,39 +179,24 @@ public sealed class PackingTests
     }
 
     [Fact]
-    public void PackCsv_WritesValidCsv_FromGeneratedInput()
+    public void PackCsv_WritesValidCsv_FromDatasetGeneratorInput()
     {
         var pallet = DefaultPallet();
+        using var workspace = new TestWorkspace();
 
-        var tempDir = Path.Combine(Path.GetTempPath(), "Palletes.Tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(tempDir);
+        var generator = new DatasetGenerator(Profile.DefaultRetailLike(), pallet, new Rng(20240504));
+        generator.GenerateAll(workspace.Root);
 
-        var inPath = Path.Combine(tempDir, "in.csv");
-        var outPath = Path.Combine(tempDir, "out.csv");
-
-        var lines = new List<string>
-        {
-            "1",
-            "SKU,Quantity,Length,Width,Height,Weight,Strength,Aisle,Caustic",
-            string.Join(",", 700001, 12, 200, 200, 200, 0, 0, 0, 0, ""),
-            string.Join(",", 700002, 10, 200, 200, 200, 0, 0, 0, 0, ""),
-        };
-
-        File.WriteAllLines(inPath, lines);
+        var inPath = workspace.PathFor("group1", "1", "1.csv");
+        var outPath = workspace.PathFor("generated-order-out.csv");
+        var expectedBoxes = ItemRow.ParseSimple(inPath).Sum(row => row.Quantity);
 
         GeneticPalletPacker.PackCsv(inPath, outPath, pallet, seed: 7);
 
-        Assert.True(File.Exists(outPath));
-
-        var vr = PackingCsvValidator.ReadPackingCsv(outPath);
-        Assert.NotNull(vr.Pallet);
-        Assert.Equal(22, vr.Boxes.Count);
-
-        var report = new ValidationReport();
-        PackingCsvValidator.ValidateBasic(vr.Boxes, report);
-        PackingCsvValidator.ValidateInsidePallet(vr.Boxes, vr.Pallet!, report);
-        PackingCsvValidator.ValidateNoOverlap(vr.Boxes, report, touchIsOk: true);
-        Assert.True(report.ErrorCount == 0, string.Join("\n", report.Errors));
+        var result = PackingCsvValidator.ReadPackingCsv(outPath);
+        Assert.NotNull(result.Pallet);
+        Assert.Equal(expectedBoxes, result.Boxes.Count);
+        AssertValidPacking(result);
     }
 
     [Fact]
@@ -128,33 +204,18 @@ public sealed class PackingTests
     {
         var pallet = DefaultPallet();
         pallet.MaxHeight = 200;
+        using var workspace = new TestWorkspace();
 
-        var tempDir = Path.Combine(Path.GetTempPath(), "Palletes.Tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(tempDir);
-
-        var inPath = Path.Combine(tempDir, "in.csv");
-        var outPath = Path.Combine(tempDir, "out.csv");
-
-        var lines = new List<string>
-        {
-            "1",
-            "SKU,Quantity,Length,Width,Height,Weight,Strength,Aisle,Caustic",
-            string.Join(",", 700003, 26, 200, 200, 200, 0, 0, 0, 0, ""),
-        };
-
-        File.WriteAllLines(inPath, lines);
+        var inPath = workspace.PathFor("in.csv");
+        var outPath = workspace.PathFor("out.csv");
+        WriteOrderCsv(inPath, new TestSku(700003, 26, 200, 200, 200));
 
         GeneticPalletPacker.PackCsv(inPath, outPath, pallet, seed: 11);
 
-        var vr = PackingCsvValidator.ReadPackingCsv(outPath);
-        Assert.Equal(26, vr.Boxes.Count);
-        Assert.Equal(2, vr.Pallets.Count);
-
-        var report = new ValidationReport();
-        PackingCsvValidator.ValidateBasic(vr.Boxes, report);
-        PackingCsvValidator.ValidateInsidePallet(vr.Boxes, vr.Pallets, report);
-        PackingCsvValidator.ValidateNoOverlap(vr.Boxes, report, touchIsOk: true);
-        Assert.True(report.ErrorCount == 0, string.Join("\n", report.Errors));
+        var result = PackingCsvValidator.ReadPackingCsv(outPath);
+        Assert.Equal(26, result.Boxes.Count);
+        Assert.Equal(2, result.Pallets.Count);
+        AssertValidPacking(result);
     }
 
     [Fact]
@@ -163,35 +224,19 @@ public sealed class PackingTests
         var pallet = DefaultPallet();
         pallet.MaxHeight = 200;
         var container = Uk3Container();
+        using var workspace = new TestWorkspace();
 
-        var tempDir = Path.Combine(Path.GetTempPath(), "Palletes.Tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(tempDir);
-
-        var inPath = Path.Combine(tempDir, "in.csv");
-        var outPath = Path.Combine(tempDir, "out.csv");
-
-        var lines = new List<string>
-        {
-            "1",
-            "SKU,Quantity,Length,Width,Height,Weight,Strength,Aisle,Caustic",
-            string.Join(",", 700004, 50, 200, 200, 200, 0, 0, 0, 0, ""),
-        };
-
-        File.WriteAllLines(inPath, lines);
+        var inPath = workspace.PathFor("in.csv");
+        var outPath = workspace.PathFor("out.csv");
+        WriteOrderCsv(inPath, new TestSku(700004, 50, 200, 200, 200));
 
         GeneticPalletPacker.PackCsv(inPath, outPath, pallet, container, seed: 17);
 
-        var vr = PackingCsvValidator.ReadPackingCsv(outPath);
-        Assert.Equal(50, vr.Boxes.Count);
-        Assert.Equal(3, vr.Pallets.Count);
-        Assert.Equal(2, vr.Containers.Count);
-
-        var report = new ValidationReport();
-        PackingCsvValidator.ValidateBasic(vr.Boxes, report);
-        PackingCsvValidator.ValidatePalletsInsideContainers(vr.Pallets, vr.Containers, report);
-        PackingCsvValidator.ValidateInsidePallet(vr.Boxes, vr.Pallets, report);
-        PackingCsvValidator.ValidateNoOverlap(vr.Boxes, report, touchIsOk: true);
-        Assert.True(report.ErrorCount == 0, string.Join("\n", report.Errors));
+        var result = PackingCsvValidator.ReadPackingCsv(outPath);
+        Assert.Equal(50, result.Boxes.Count);
+        Assert.Equal(3, result.Pallets.Count);
+        Assert.Equal(2, result.Containers.Count);
+        AssertValidPacking(result);
     }
 
     [Fact]
@@ -200,33 +245,18 @@ public sealed class PackingTests
         var pallet = DefaultPallet();
         pallet.MaxHeight = 200;
         pallet.MaxWeight = 3000;
+        using var workspace = new TestWorkspace();
 
-        var tempDir = Path.Combine(Path.GetTempPath(), "Palletes.Tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(tempDir);
-
-        var inPath = Path.Combine(tempDir, "in.csv");
-        var outPath = Path.Combine(tempDir, "out.csv");
-
-        var lines = new List<string>
-        {
-            "1",
-            "SKU,Quantity,Length,Width,Height,Weight,Strength,Aisle,Caustic",
-            string.Join(",", 700005, 4, 200, 200, 200, 2000, 5, 1, 0, ""),
-        };
-
-        File.WriteAllLines(inPath, lines);
+        var inPath = workspace.PathFor("in.csv");
+        var outPath = workspace.PathFor("out.csv");
+        WriteOrderCsv(inPath, new TestSku(700005, 4, 200, 200, 200, Weight: 2000, Strength: 5, Aisle: 1));
 
         GeneticPalletPacker.PackCsv(inPath, outPath, pallet, seed: 23);
 
-        var vr = PackingCsvValidator.ReadPackingCsv(outPath);
-        Assert.Equal(4, vr.Boxes.Count);
-        Assert.Equal(4, vr.Pallets.Count);
-
-        var report = new ValidationReport();
-        PackingCsvValidator.ValidateBasic(vr.Boxes, report);
-        PackingCsvValidator.ValidateInsidePallet(vr.Boxes, vr.Pallets, report);
-        PackingCsvValidator.ValidateNoOverlap(vr.Boxes, report, touchIsOk: true);
-        Assert.True(report.ErrorCount == 0, string.Join("\n", report.Errors));
+        var result = PackingCsvValidator.ReadPackingCsv(outPath);
+        Assert.Equal(4, result.Boxes.Count);
+        Assert.Equal(4, result.Pallets.Count);
+        AssertValidPacking(result);
     }
 
     [Fact]
@@ -234,33 +264,20 @@ public sealed class PackingTests
     {
         var pallet = DefaultPallet();
         pallet.MaxHeight = 300;
+        using var workspace = new TestWorkspace();
 
-        var tempDir = Path.Combine(Path.GetTempPath(), "Palletes.Tests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(tempDir);
-
-        var inPath = Path.Combine(tempDir, "in.csv");
-        var outPath = Path.Combine(tempDir, "out.csv");
-
-        var lines = new List<string>
-        {
-            "1",
-            "SKU,Quantity,Length,Width,Height,Weight,Strength,Aisle,Caustic",
-            string.Join(",", 700006, 1, 1200, 800, 100, 1000, 5, 1, 0, ""),
-            string.Join(",", 700007, 1, 1200, 800, 100, 1000, 5, 1, 1, ""),
-        };
-
-        File.WriteAllLines(inPath, lines);
+        var inPath = workspace.PathFor("in.csv");
+        var outPath = workspace.PathFor("out.csv");
+        WriteOrderCsv(
+            inPath,
+            new TestSku(700006, 1, 1200, 800, 100, Weight: 1000, Strength: 5, Aisle: 1),
+            new TestSku(700007, 1, 1200, 800, 100, Weight: 1000, Strength: 5, Aisle: 1, Caustic: 1));
 
         GeneticPalletPacker.PackCsv(inPath, outPath, pallet, seed: 29);
 
-        var vr = PackingCsvValidator.ReadPackingCsv(outPath);
-        Assert.Equal(2, vr.Boxes.Count);
-        Assert.Equal(2, vr.Pallets.Count);
-
-        var report = new ValidationReport();
-        PackingCsvValidator.ValidateBasic(vr.Boxes, report);
-        PackingCsvValidator.ValidateInsidePallet(vr.Boxes, vr.Pallets, report);
-        PackingCsvValidator.ValidateNoOverlap(vr.Boxes, report, touchIsOk: true);
-        Assert.True(report.ErrorCount == 0, string.Join("\n", report.Errors));
+        var result = PackingCsvValidator.ReadPackingCsv(outPath);
+        Assert.Equal(2, result.Boxes.Count);
+        Assert.Equal(2, result.Pallets.Count);
+        AssertValidPacking(result);
     }
 }

@@ -1,12 +1,17 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Palletes.Models;
 
 namespace Palletes.Core
 {
     public static partial class GeneticPalletPacker
     {
-        private static List<PlacedBox> Decode(Chromosome c, IReadOnlyList<PackBox> boxes, PalletSpec pallet)
+        private static List<PlacedBox> Decode(
+            Chromosome c,
+            IReadOnlyList<PackBox> boxes,
+            PalletSpec pallet,
+            OrientationFallbackMode orientationMode)
         {
             var placed = new List<PlacedBox>(boxes.Count);
 
@@ -36,26 +41,64 @@ namespace Palletes.Core
                     return a.X.CompareTo(b.X);
                 });
 
-                var (l, w, h) = OrientedDims(box, ori);
+                if (TryPlaceBox(box, ori, points, pointsSet, placed, ref placedWeightGrams, pallet))
+                    continue;
 
-                for (int pi = 0; pi < points.Count; pi++)
+                if (orientationMode == OrientationFallbackMode.GeneOnly)
+                    continue;
+
+                foreach (byte fallbackOri in FallbackOrientations(box, ori))
                 {
-                    var p = points[pi];
-                    if (!Fits(box, p, l, w, h, placed, placedWeightGrams, pallet))
-                        continue;
-
-                    var pb = new PlacedBox(box, box.Id, p.X, p.Y, p.Z, p.X + l, p.Y + w, p.Z + h);
-                    placed.Add(pb);
-                    placedWeightGrams += box.WeightGrams;
-
-                    pointsSet.Remove(p);
-                    points.RemoveAt(pi);
-                    AddPoints(points, pointsSet, pallet, pb);
-                    break;
+                    if (TryPlaceBox(box, fallbackOri, points, pointsSet, placed, ref placedWeightGrams, pallet))
+                        break;
                 }
             }
 
             return placed;
+        }
+
+        private static bool TryPlaceBox(
+            PackBox box,
+            byte ori,
+            List<Int3> points,
+            HashSet<Int3> pointsSet,
+            List<PlacedBox> placed,
+            ref long placedWeightGrams,
+            PalletSpec pallet)
+        {
+            var (l, w, h) = OrientedDims(box, ori);
+
+            for (int pi = 0; pi < points.Count; pi++)
+            {
+                var p = points[pi];
+                if (!Fits(box, p, l, w, h, placed, placedWeightGrams, pallet))
+                    continue;
+
+                var pb = new PlacedBox(box, box.Id, p.X, p.Y, p.Z, p.X + l, p.Y + w, p.Z + h);
+                placed.Add(pb);
+                placedWeightGrams += box.WeightGrams;
+
+                pointsSet.Remove(p);
+                points.RemoveAt(pi);
+                AddPoints(points, pointsSet, pallet, pb);
+                return true;
+            }
+
+            return false;
+        }
+
+        private static IEnumerable<byte> FallbackOrientations(PackBox box, byte preferred)
+        {
+            var seen = new HashSet<(int L, int W, int H)> { OrientedDims(box, preferred) };
+
+            return Enumerable.Range(0, 6)
+                .Select(i => (Ori: (byte)i, Dims: OrientedDims(box, (byte)i)))
+                .Where(x => x.Ori != preferred && seen.Add(x.Dims))
+                .OrderBy(x => x.Dims.H)
+                .ThenByDescending(x => (long)x.Dims.L * x.Dims.W)
+                .ThenBy(x => x.Ori)
+                .Take(3)
+                .Select(x => x.Ori);
         }
 
         private static (int L, int W, int H) OrientedDims(PackBox b, byte ori)

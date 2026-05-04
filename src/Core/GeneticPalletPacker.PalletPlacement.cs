@@ -7,7 +7,12 @@ namespace Palletes.Core
 {
     public static partial class GeneticPalletPacker
     {
-        private static List<PackedPallet> PackAcrossPallets(IReadOnlyList<PackBox> boxes, PalletSpec pallet, int seed, FitnessWeights weights)
+        private static List<PackedPallet> PackAcrossPallets(
+            IReadOnlyList<PackBox> boxes,
+            PalletSpec pallet,
+            int seed,
+            FitnessWeights weights,
+            OrientationFallbackMode orientationMode)
         {
             var remaining = boxes
                 .OrderByDescending(b => b.Volume)
@@ -21,7 +26,7 @@ namespace Palletes.Core
 
             while (remaining.Count > 0)
             {
-                var placed = PackSinglePallet(remaining, pallet, seed + palletIndex * 104729, weights);
+                var placed = PackSinglePallet(remaining, pallet, seed + palletIndex * 104729, weights, orientationMode);
                 if (placed.Count == 0)
                 {
                     throw new InvalidOperationException($"Could not place any of the remaining {remaining.Count} boxes on pallet {palletIndex}.");

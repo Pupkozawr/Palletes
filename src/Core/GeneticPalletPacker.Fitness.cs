@@ -7,9 +7,14 @@ namespace Palletes.Core
 {
     public static partial class GeneticPalletPacker
     {
-        private static void Evaluate(Chromosome c, IReadOnlyList<PackBox> boxes, PalletSpec pallet, FitnessWeights weights)
+        private static void Evaluate(
+            Chromosome c,
+            IReadOnlyList<PackBox> boxes,
+            PalletSpec pallet,
+            FitnessWeights weights,
+            OrientationFallbackMode orientationMode)
         {
-            var placed = Decode(c, boxes, pallet);
+            var placed = Decode(c, boxes, pallet, orientationMode);
             var metrics = Measure(placed, boxes.Count, pallet);
 
             c.PlacedCount = metrics.PlacedCount;

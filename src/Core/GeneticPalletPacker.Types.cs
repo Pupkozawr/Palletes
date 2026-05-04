@@ -18,6 +18,12 @@ namespace Palletes.Core
             double HeavyLow,
             double HeightPenalty);
 
+        internal enum OrientationFallbackMode
+        {
+            GeneOnly,
+            Fallback
+        }
+
         private const double Q1Density = 0.18;
         private const double Q2PlacedShare = 0.52;
         private const double Q3Grouping = 0.06;

@@ -12,7 +12,7 @@ namespace Palletes.Core
             => PackCsv(inPath, outPath, pallet, container: null, seed);
 
         public static void PackCsv(string inPath, string outPath, PalletSpec pallet, ContainerSpec? container, int seed = 12345)
-            => PackCsvCore(inPath, outPath, pallet, container, seed, DefaultWeights);
+            => PackCsvCore(inPath, outPath, pallet, container, seed, DefaultWeights, OrientationFallbackMode.Fallback);
 
         internal static void PackCsvForExperiment(
             string inPath,
@@ -21,7 +21,16 @@ namespace Palletes.Core
             ContainerSpec? container,
             int seed,
             FitnessWeights weights)
-            => PackCsvCore(inPath, outPath, pallet, container, seed, NormalizeWeights(weights));
+            => PackCsvCore(inPath, outPath, pallet, container, seed, NormalizeWeights(weights), OrientationFallbackMode.Fallback);
+
+        internal static void PackCsvForOrientationExperiment(
+            string inPath,
+            string outPath,
+            PalletSpec pallet,
+            ContainerSpec? container,
+            int seed,
+            OrientationFallbackMode orientationMode)
+            => PackCsvCore(inPath, outPath, pallet, container, seed, DefaultWeights, orientationMode);
 
         private static void PackCsvCore(
             string inPath,
@@ -29,7 +38,8 @@ namespace Palletes.Core
             PalletSpec pallet,
             ContainerSpec? container,
             int seed,
-            FitnessWeights weights)
+            FitnessWeights weights,
+            OrientationFallbackMode orientationMode)
         {
             if (pallet.Length <= 0 || pallet.Width <= 0)
                 throw new ArgumentOutOfRangeException(nameof(pallet), "Pallet base dimensions must be positive.");
@@ -38,7 +48,7 @@ namespace Palletes.Core
             var boxes = ExpandBoxes(items);
             var effectivePallet = NormalizePallet(pallet);
 
-            var packedPallets = PackAcrossPallets(boxes, effectivePallet, seed, weights);
+            var packedPallets = PackAcrossPallets(boxes, effectivePallet, seed, weights, orientationMode);
             List<PackedContainer> packedContainers;
             if (container is not null)
             {
@@ -82,7 +92,7 @@ namespace Palletes.Core
         {
             var packBoxes = boxes.Select(b => new PackBox(b.Id, b.Id, b.L, b.W, b.H)).ToList();
             var effectivePallet = NormalizePallet(pallet);
-            var placed = PackSinglePallet(packBoxes, effectivePallet, seed, DefaultWeights);
+            var placed = PackSinglePallet(packBoxes, effectivePallet, seed, DefaultWeights, OrientationFallbackMode.Fallback);
 
             if (placed.Count != packBoxes.Count)
                 throw new InvalidOperationException($"Could not place all boxes on a single pallet. Placed={placed.Count}, total={packBoxes.Count}.");

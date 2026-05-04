@@ -8,7 +8,12 @@ namespace Palletes.Core
 {
     public static partial class GeneticPalletPacker
     {
-        private static List<PlacedBox> PackSinglePallet(IReadOnlyList<PackBox> boxes, PalletSpec pallet, int seed, FitnessWeights weights)
+        private static List<PlacedBox> PackSinglePallet(
+            IReadOnlyList<PackBox> boxes,
+            PalletSpec pallet,
+            int seed,
+            FitnessWeights weights,
+            OrientationFallbackMode orientationMode)
         {
             int n = boxes.Count;
             if (n == 0) return new List<PlacedBox>();
@@ -21,18 +26,18 @@ namespace Palletes.Core
 
             var population = new Chromosome[populationSize];
             population[0] = CreateHeuristicChromosome(boxes, descendingVolume: true);
-            Evaluate(population[0], boxes, pallet, weights);
+            Evaluate(population[0], boxes, pallet, weights, orientationMode);
 
             if (populationSize > 1)
             {
                 population[1] = CreateHeuristicChromosome(boxes, descendingVolume: false);
-                Evaluate(population[1], boxes, pallet, weights);
+                Evaluate(population[1], boxes, pallet, weights, orientationMode);
             }
 
             for (int i = 2; i < populationSize; i++)
             {
                 population[i] = RandomChromosome(n, rng);
-                Evaluate(population[i], boxes, pallet, weights);
+                Evaluate(population[i], boxes, pallet, weights, orientationMode);
             }
 
             Chromosome best = population.OrderByDescending(c => c.Fitness)
@@ -57,7 +62,7 @@ namespace Palletes.Core
 
                     var child = Crossover(p1, p2, rng);
                     Mutate(child, rng);
-                    Evaluate(child, boxes, pallet, weights);
+                    Evaluate(child, boxes, pallet, weights, orientationMode);
                     next[i] = child;
                 }
 
@@ -82,7 +87,7 @@ namespace Palletes.Core
                 }
             }
 
-            return Decode(best, boxes, pallet);
+            return Decode(best, boxes, pallet, orientationMode);
         }
 
         private static bool IsBetter(Chromosome candidate, Chromosome incumbent)
