@@ -51,8 +51,6 @@ namespace Palletes.Generation
                     int orderId = NextOrderId();
                     int K = SampleKGivenN(N);
                     var qty = SampleQtyPerSkuSumToN(K, N);
-                    int numAisles = _rng.Int(1, Math.Min(6, K));
-
                     var lines = new List<SkuLine>(K);
                     for (int i = 0; i < K; i++)
                     {
@@ -60,7 +58,6 @@ namespace Palletes.Generation
                         var (L, W, H) = SampleDims();
                         int weightG = EstimateWeightGrams(L, W, H);
                         int strength = _rng.Int(1, 5);
-                        int aisle = _rng.Int(1, numAisles);
                         int caustic = _rng.Bool(0.03) ? 1 : 0;
 
                         lines.Add(new SkuLine
@@ -72,7 +69,6 @@ namespace Palletes.Generation
                             Height = H,
                             Weight = weightG,
                             Strength = strength,
-                            Aisle = aisle,
                             Caustic = caustic
                         });
                     }
@@ -119,8 +115,6 @@ namespace Palletes.Generation
 
                     int orderId = NextOrderId();
                     int K = sc.qtyPerSku.Length;
-                    int numAisles = _rng.Int(1, Math.Min(8, K));
-
                     var lines = new List<SkuLine>(K);
                     for (int i = 0; i < K; i++)
                     {
@@ -137,7 +131,6 @@ namespace Palletes.Generation
                             Height = H,
                             Weight = EstimateWeightGrams(L, W, H),
                             Strength = _rng.Int(1, 5),
-                            Aisle = _rng.Int(1, numAisles),
                             Caustic = _rng.Bool(0.03) ? 1 : 0
                         });
                     }
@@ -164,8 +157,6 @@ namespace Palletes.Generation
                 for (int i = 0; i < tail; i++) qty.Add(_rng.Bool(0.7) ? 1 : 2);
 
                 int K = qty.Count;
-                int numAisles = _rng.Int(1, Math.Min(8, K));
-
                 var lines = new List<SkuLine>(K);
                 for (int i = 0; i < K; i++)
                 {
@@ -181,7 +172,6 @@ namespace Palletes.Generation
                         Height = H,
                         Weight = EstimateWeightGrams(L, W, H),
                         Strength = _rng.Int(1, 5),
-                        Aisle = _rng.Int(1, numAisles),
                         Caustic = _rng.Bool(0.03) ? 1 : 0
                     });
                 }
@@ -249,8 +239,6 @@ namespace Palletes.Generation
                 int orderId = NextOrderId();
                 int K = SampleKGivenN(N);
                 var qty = SampleQtyPerSkuSumToN(K, N);
-                int numAisles = _rng.Int(1, Math.Min(6, K));
-
                 var lines = new List<SkuLine>(K);
                 for (int i = 0; i < K; i++)
                 {
@@ -266,7 +254,6 @@ namespace Palletes.Generation
                         Height = H,
                         Weight = EstimateWeightGrams(L, W, H),
                         Strength = _rng.Int(1, 5),
-                        Aisle = _rng.Int(1, numAisles),
                         Caustic = _rng.Bool(0.03) ? 1 : 0
                     });
                 }
@@ -335,7 +322,6 @@ namespace Palletes.Generation
                                 Height = H,
                                 Weight = EstimateWeightGrams(L, W, H),
                                 Strength = _rng.Int(1, 5),
-                                Aisle = cat,
                                 Caustic = _rng.Bool(0.03) ? 1 : 0
                             });
                         }
@@ -376,7 +362,7 @@ namespace Palletes.Generation
             {
                 sw.WriteLine(orderId.ToString(CultureInfo.InvariantCulture));
 
-                sw.WriteLine("SKU,Quantity,Length,Width,Height,Weight,Strength,Aisle,Caustic");
+                sw.WriteLine("SKU,Quantity,Length,Width,Height,Weight,Strength,Caustic");
 
                 foreach (var l in lines)
                 {
@@ -388,7 +374,6 @@ namespace Palletes.Generation
                         l.Height.ToString(CultureInfo.InvariantCulture),
                         l.Weight.ToString(CultureInfo.InvariantCulture),
                         l.Strength.ToString(CultureInfo.InvariantCulture),
-                        l.Aisle.ToString(CultureInfo.InvariantCulture),
                         l.Caustic.ToString(CultureInfo.InvariantCulture),
                         ""
                     ));
@@ -398,7 +383,6 @@ namespace Palletes.Generation
             string metaPath = Path.Combine(orderFolder, "meta.txt");
             int totalBoxes = lines.Sum(x => x.Quantity);
             int totalSkus = lines.Count;
-            int totalAisles = lines.Select(x => x.Aisle).Distinct().Count();
 
             var metaLines = new List<string>
             {
@@ -407,7 +391,6 @@ namespace Palletes.Generation
                 $"scenario={scenario}",
                 $"total_boxes={totalBoxes}",
                 $"total_skus={totalSkus}",
-                $"total_aisles={totalAisles}",
                 targetPallets.HasValue ? $"target_pallets={targetPallets.Value}" : "target_pallets=",
                 $"pallet_type={_pallet.PalletType}",
                 $"pallet_length_mm={_pallet.Length}",

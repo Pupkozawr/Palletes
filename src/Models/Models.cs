@@ -32,7 +32,6 @@ namespace Palletes.Models
         public int Height { get; set; }
         public int Weight { get; set; }
         public int Strength { get; set; }
-        public int Aisle { get; set; }
         public int Caustic { get; set; }
     }
 

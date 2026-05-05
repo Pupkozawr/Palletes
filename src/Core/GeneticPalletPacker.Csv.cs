@@ -28,7 +28,6 @@ namespace Palletes.Core
                         it.Height,
                         it.Weight,
                         it.Strength,
-                        it.Aisle,
                         it.Caustic != 0));
                 }
             }

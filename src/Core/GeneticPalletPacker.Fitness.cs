@@ -43,7 +43,6 @@ namespace Palletes.Core
                 placedVol,
                 boundingVolume,
                 CountSameTypeTouchingRuns(placed),
-                CountSameAisleTouchingRuns(placed),
                 AverageSupportScore(placed),
                 ComputeHeavyLowScore(placed, pallet));
         }
@@ -59,7 +58,7 @@ namespace Palletes.Core
                 : 0.0;
 
             double p3 = metrics.PlacedCount > 1
-                ? Math.Min(1.0, (metrics.SameTypeTouchingCount + 0.35 * metrics.SameAisleTouchingCount) / (metrics.PlacedCount - 1.0))
+                ? Math.Min(1.0, metrics.SameTypeTouchingCount / (metrics.PlacedCount - 1.0))
                 : 0.0;
 
             long palletVolume = (long)pallet.Length * pallet.Width * pallet.MaxHeight;
@@ -90,22 +89,6 @@ namespace Palletes.Core
             for (int i = 1; i < placed.Count; i++)
             {
                 if (placed[i - 1].TypeKey == placed[i].TypeKey && TouchByFace(placed[i - 1], placed[i]))
-                {
-                    count++;
-                }
-            }
-
-            return count;
-        }
-
-        private static int CountSameAisleTouchingRuns(IReadOnlyList<PlacedBox> placed)
-        {
-            int count = 0;
-            for (int i = 1; i < placed.Count; i++)
-            {
-                if (placed[i - 1].Source.Aisle > 0 &&
-                    placed[i - 1].Source.Aisle == placed[i].Source.Aisle &&
-                    TouchByFace(placed[i - 1], placed[i]))
                 {
                     count++;
                 }

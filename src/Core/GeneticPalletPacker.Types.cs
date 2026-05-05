@@ -51,13 +51,12 @@ namespace Palletes.Core
             public int H { get; }
             public int WeightGrams { get; }
             public int Strength { get; }
-            public int Aisle { get; }
             public bool Caustic { get; }
             public long Volume => (long)L * W * H;
             public string SizeKey { get; }
             public string TypeKey => string.IsNullOrWhiteSpace(Sku) ? SizeKey : Sku;
 
-            public PackBox(string id, string sku, int l, int w, int h, int weightGrams = 0, int strength = 5, int aisle = 0, bool caustic = false)
+            public PackBox(string id, string sku, int l, int w, int h, int weightGrams = 0, int strength = 5, bool caustic = false)
             {
                 Id = id;
                 Sku = sku;
@@ -66,7 +65,6 @@ namespace Palletes.Core
                 H = h;
                 WeightGrams = Math.Max(0, weightGrams);
                 Strength = Math.Clamp(strength, 0, 5);
-                Aisle = aisle;
                 Caustic = caustic;
 
                 var dims = new[] { l, w, h };
@@ -125,7 +123,6 @@ namespace Palletes.Core
             long PlacedVolume,
             long BoundingVolume,
             int SameTypeTouchingCount,
-            int SameAisleTouchingCount,
             double StabilityScore,
             double HeavyLowScore);
 

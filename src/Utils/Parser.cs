@@ -15,7 +15,6 @@ namespace Palletes.Utils
         public int Height { get; set; }
         public int Weight { get; set; }
         public int Strength { get; set; }
-        public int Aisle { get; set; }
         public int Caustic { get; set; }
 
         public static List<ItemRow> ParseSimple(string path)
@@ -27,7 +26,41 @@ namespace Palletes.Utils
 
             if (int.TryParse(lines[0].Trim(), out _)) i++;
 
+            var header = i < lines.Length
+                ? lines[i].Trim().TrimEnd(',').Split(',').Select(x => x.Trim()).ToArray()
+                : Array.Empty<string>();
             if (i < lines.Length) i++;
+
+            int IndexOf(string name, int fallback)
+            {
+                for (int h = 0; h < header.Length; h++)
+                {
+                    if (string.Equals(header[h], name, StringComparison.OrdinalIgnoreCase))
+                        return h;
+                }
+
+                return fallback;
+            }
+
+            int skuIndex = IndexOf("SKU", 0);
+            int quantityIndex = IndexOf("Quantity", 1);
+            int lengthIndex = IndexOf("Length", 2);
+            int widthIndex = IndexOf("Width", 3);
+            int heightIndex = IndexOf("Height", 4);
+            int weightIndex = IndexOf("Weight", 5);
+            int strengthIndex = IndexOf("Strength", 6);
+            int causticIndex = IndexOf("Caustic", header.Any(x => string.Equals(x, "Aisle", StringComparison.OrdinalIgnoreCase)) ? 8 : 7);
+            int requiredColumns = new[]
+            {
+                skuIndex,
+                quantityIndex,
+                lengthIndex,
+                widthIndex,
+                heightIndex,
+                weightIndex,
+                strengthIndex,
+                causticIndex
+            }.Max() + 1;
 
             var result = new List<ItemRow>();
 
@@ -40,19 +73,18 @@ namespace Palletes.Utils
 
                 var p = line.Split(',');
 
-                if (p.Length < 9) continue;
+                if (p.Length < requiredColumns) continue;
 
                 result.Add(new ItemRow
                 {
-                    SKU = int.Parse(p[0]),
-                    Quantity = int.Parse(p[1]),
-                    Length = int.Parse(p[2]),
-                    Width = int.Parse(p[3]),
-                    Height = int.Parse(p[4]),
-                    Weight = int.Parse(p[5]),
-                    Strength = int.Parse(p[6]),
-                    Aisle = int.Parse(p[7]),
-                    Caustic = int.Parse(p[8]),
+                    SKU = int.Parse(p[skuIndex]),
+                    Quantity = int.Parse(p[quantityIndex]),
+                    Length = int.Parse(p[lengthIndex]),
+                    Width = int.Parse(p[widthIndex]),
+                    Height = int.Parse(p[heightIndex]),
+                    Weight = int.Parse(p[weightIndex]),
+                    Strength = int.Parse(p[strengthIndex]),
+                    Caustic = int.Parse(p[causticIndex]),
                 });
             }
 

@@ -134,7 +134,6 @@ def load_layout_csv(path: str):
             "SKU": infer_sku(record["ID"]),
             "Weight": 0,
             "Strength": 0,
-            "Aisle": 0,
             "Caustic": 0,
             "x": parse_float(record["x"]),
             "y": parse_float(record["y"]),
@@ -219,7 +218,6 @@ def load_item_metadata(path: str | None):
             "SKU": sku,
             "Weight": parse_int(record.get("Weight", ""), 0),
             "Strength": parse_int(record.get("Strength", ""), 0),
-            "Aisle": parse_int(record.get("Aisle", ""), 0),
             "Caustic": parse_int(record.get("Caustic", ""), 0),
             "Length": parse_int(record.get("Length", ""), 0),
             "Width": parse_int(record.get("Width", ""), 0),
@@ -240,7 +238,6 @@ def attach_item_metadata(boxes, metadata):
             continue
         box["Weight"] = item["Weight"]
         box["Strength"] = item["Strength"]
-        box["Aisle"] = item["Aisle"]
         box["Caustic"] = item["Caustic"]
 
 
@@ -551,9 +548,6 @@ def build_palette(values, cmap_name="tab20"):
 def color_key_for_box(box, color_by, analysis):
     if color_by == "sku":
         return str(box.get("SKU") or infer_sku(box["ID"]))
-    if color_by == "aisle":
-        aisle = box.get("Aisle", 0)
-        return f"Aisle {aisle}" if aisle else "Aisle ?"
     if color_by == "caustic":
         return "Caustic" if box.get("Caustic", 0) else "Regular"
     if color_by == "height":
@@ -1102,7 +1096,7 @@ def output_path_for_view(args, view):
 def main():
     parser = argparse.ArgumentParser(description="Visualize and diagnose packing layout from packed CSV.")
     parser.add_argument("file", help="Packed CSV file")
-    parser.add_argument("--input", help="Original order CSV. Adds SKU, weight, strength, aisle and caustic metadata.")
+    parser.add_argument("--input", help="Original order CSV. Adds SKU, weight, strength and caustic metadata.")
     parser.add_argument("--save", help="Save figure to PNG. With --view all, suffixes are added.")
     parser.add_argument("--save-dir", help="Save generated figures into this directory.")
     parser.add_argument("--report-csv", help="Write per-pallet metrics to CSV.")
@@ -1117,7 +1111,7 @@ def main():
     )
     parser.add_argument(
         "--color-by",
-        choices=["pallet", "sku", "aisle", "height", "status", "caustic"],
+        choices=["pallet", "sku", "height", "status", "caustic"],
         default="pallet",
         help="How to color boxes.",
     )
