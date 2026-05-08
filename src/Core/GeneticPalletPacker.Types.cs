@@ -24,6 +24,23 @@ namespace Palletes.Core
             Fallback
         }
 
+        internal enum PackingSearchMode
+        {
+            Genetic,
+            MultiStartGreedy,
+            MultiStartGreedyBestFit
+        }
+
+        private enum DecoderPlacementMode
+        {
+            FirstFit,
+            BestFitLite
+        }
+
+        private const int DefaultMultiStartRandomStarts = 40;
+        private const int BestFitLiteMaxOrientations = 3;
+        private const int BestFitLiteMaxPoints = 24;
+
         private const double Q1Density = 0.18;
         private const double Q2PlacedShare = 0.52;
         private const double Q3Grouping = 0.06;

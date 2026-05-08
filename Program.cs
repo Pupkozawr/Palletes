@@ -58,6 +58,54 @@ namespace Palletes
                 return 0;
             }
 
+            if (args.Length >= 1 && string.Equals(args[0], "pack-greedy", StringComparison.OrdinalIgnoreCase))
+            {
+                if (args.Length < 3)
+                {
+                    Console.Error.WriteLine("Usage: pack-greedy <in.csv> <out.csv> [seed] [random-starts]");
+                    return 2;
+                }
+
+                var inPath = args[1];
+                var outPath = args[2];
+                var seed = args.Length >= 4 && int.TryParse(args[3], out var s) ? s : 12345;
+                var randomStarts = args.Length >= 5 && int.TryParse(args[4], out var rs) ? rs : 40;
+                var effectiveRandomStarts = Math.Clamp(randomStarts, 0, 500);
+
+                var sw = Stopwatch.StartNew();
+                GeneticPalletPacker.PackCsvMultiStartGreedy(inPath, outPath, packingPallet, packingContainer, seed, effectiveRandomStarts);
+                sw.Stop();
+
+                Console.WriteLine($"Packed with multi-start greedy. Seed={seed}. RandomStarts={effectiveRandomStarts}. Output: {Path.GetFullPath(outPath)}");
+                Console.WriteLine($"Packing time: {sw.ElapsedMilliseconds} ms ({sw.Elapsed:hh\\:mm\\:ss\\.fff})");
+                TryRenderPackingImage(inPath, outPath);
+                return 0;
+            }
+
+            if (args.Length >= 1 && string.Equals(args[0], "pack-greedy-bestfit", StringComparison.OrdinalIgnoreCase))
+            {
+                if (args.Length < 3)
+                {
+                    Console.Error.WriteLine("Usage: pack-greedy-bestfit <in.csv> <out.csv> [seed] [random-starts]");
+                    return 2;
+                }
+
+                var inPath = args[1];
+                var outPath = args[2];
+                var seed = args.Length >= 4 && int.TryParse(args[3], out var s) ? s : 12345;
+                var randomStarts = args.Length >= 5 && int.TryParse(args[4], out var rs) ? rs : 40;
+                var effectiveRandomStarts = Math.Clamp(randomStarts, 0, 500);
+
+                var sw = Stopwatch.StartNew();
+                GeneticPalletPacker.PackCsvMultiStartGreedyBestFit(inPath, outPath, packingPallet, packingContainer, seed, effectiveRandomStarts);
+                sw.Stop();
+
+                Console.WriteLine($"Packed with multi-start greedy best-fit-lite. Seed={seed}. RandomStarts={effectiveRandomStarts}. Output: {Path.GetFullPath(outPath)}");
+                Console.WriteLine($"Packing time: {sw.ElapsedMilliseconds} ms ({sw.Elapsed:hh\\:mm\\:ss\\.fff})");
+                TryRenderPackingImage(inPath, outPath);
+                return 0;
+            }
+
             if (args.Length >= 1 && string.Equals(args[0], "verify", StringComparison.OrdinalIgnoreCase))
             {
                 var seed = args.Length >= 2 && int.TryParse(args[1], out var vs) ? vs : 12345;
@@ -99,6 +147,27 @@ namespace Palletes
                 var seedRuns = args.Length >= 5 && int.TryParse(args[4], out var oruns) ? oruns : 1;
 
                 return OrientationFallbackExperimentRunner.Run(outDir, seed, maxOrders, seedRuns, generationPallet, packingPallet, packingContainer);
+            }
+
+            if (args.Length >= 1 && string.Equals(args[0], "compare-search", StringComparison.OrdinalIgnoreCase))
+            {
+                var outDir = args.Length >= 2 ? args[1] : "out-search-compare";
+                var seed = args.Length >= 3 && int.TryParse(args[2], out var cs) ? cs : 12345;
+                var maxOrders = args.Length >= 4 && int.TryParse(args[3], out var cm) ? cm : 8;
+                var seedRuns = args.Length >= 5 && int.TryParse(args[4], out var cr) ? cr : 1;
+                var greedyRandomStarts = args.Length >= 6 && int.TryParse(args[5], out var cg) ? cg : 40;
+                var maxBoxes = args.Length >= 7 && int.TryParse(args[6], out var cb) ? cb : 40;
+
+                return SearchAlgorithmComparisonRunner.Run(
+                    outDir,
+                    seed,
+                    maxOrders,
+                    seedRuns,
+                    greedyRandomStarts,
+                    maxBoxes,
+                    generationPallet,
+                    packingPallet,
+                    packingContainer);
             }
 
             if (args.Length == 0)

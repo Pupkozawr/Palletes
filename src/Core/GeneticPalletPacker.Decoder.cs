@@ -11,7 +11,8 @@ namespace Palletes.Core
             Chromosome c,
             IReadOnlyList<PackBox> boxes,
             PalletSpec pallet,
-            OrientationFallbackMode orientationMode)
+            OrientationFallbackMode orientationMode,
+            DecoderPlacementMode placementMode = DecoderPlacementMode.FirstFit)
         {
             var placed = new List<PlacedBox>(boxes.Count);
 
@@ -24,22 +25,13 @@ namespace Palletes.Core
                 var box = boxes[c.Order[pos]];
                 byte ori = (byte)(c.Orientation[pos] % 6);
 
-                points.Sort(static (a, b) =>
+                SortCandidatePoints(points);
+
+                if (placementMode == DecoderPlacementMode.BestFitLite &&
+                    TryPlaceBoxBestFitLite(box, ori, points, pointsSet, placed, ref placedWeightGrams, pallet, orientationMode))
                 {
-                    long da = (long)a.X * a.X + (long)a.Y * a.Y + (long)a.Z * a.Z;
-                    long db = (long)b.X * b.X + (long)b.Y * b.Y + (long)b.Z * b.Z;
-
-                    int d = da.CompareTo(db);
-                    if (d != 0) return d;
-
-                    int z = a.Z.CompareTo(b.Z);
-                    if (z != 0) return z;
-
-                    int y = a.Y.CompareTo(b.Y);
-                    if (y != 0) return y;
-
-                    return a.X.CompareTo(b.X);
-                });
+                    continue;
+                }
 
                 if (TryPlaceBox(box, ori, points, pointsSet, placed, ref placedWeightGrams, pallet))
                     continue;
@@ -55,6 +47,26 @@ namespace Palletes.Core
             }
 
             return placed;
+        }
+
+        private static void SortCandidatePoints(List<Int3> points)
+        {
+            points.Sort(static (a, b) =>
+            {
+                long da = (long)a.X * a.X + (long)a.Y * a.Y + (long)a.Z * a.Z;
+                long db = (long)b.X * b.X + (long)b.Y * b.Y + (long)b.Z * b.Z;
+
+                int d = da.CompareTo(db);
+                if (d != 0) return d;
+
+                int z = a.Z.CompareTo(b.Z);
+                if (z != 0) return z;
+
+                int y = a.Y.CompareTo(b.Y);
+                if (y != 0) return y;
+
+                return a.X.CompareTo(b.X);
+            });
         }
 
         private static bool TryPlaceBox(
@@ -85,6 +97,151 @@ namespace Palletes.Core
             }
 
             return false;
+        }
+
+        private static bool TryPlaceBoxBestFitLite(
+            PackBox box,
+            byte preferredOri,
+            List<Int3> points,
+            HashSet<Int3> pointsSet,
+            List<PlacedBox> placed,
+            ref long placedWeightGrams,
+            PalletSpec pallet,
+            OrientationFallbackMode orientationMode)
+        {
+            var orientations = BestFitLiteOrientations(box, preferredOri, orientationMode);
+            int pointLimit = Math.Min(points.Count, BestFitLiteMaxPoints);
+
+            bool hasBest = false;
+            int bestPointIndex = -1;
+            byte bestOri = preferredOri;
+            int bestL = 0, bestW = 0, bestH = 0;
+            double bestScore = double.PositiveInfinity;
+
+            int currentHeight = 0;
+            int currentMaxX = 0;
+            int currentMaxY = 0;
+            for (int i = 0; i < placed.Count; i++)
+            {
+                var b = placed[i];
+                if (b.Z > currentHeight) currentHeight = b.Z;
+                if (b.X > currentMaxX) currentMaxX = b.X;
+                if (b.Y > currentMaxY) currentMaxY = b.Y;
+            }
+
+            for (int oi = 0; oi < orientations.Count; oi++)
+            {
+                byte ori = orientations[oi];
+                var (l, w, h) = OrientedDims(box, ori);
+
+                for (int pi = 0; pi < pointLimit; pi++)
+                {
+                    var p = points[pi];
+                    if (!Fits(box, p, l, w, h, placed, placedWeightGrams, pallet))
+                        continue;
+
+                    double score = BestFitLiteScore(box, p, l, w, h, placed, currentHeight, currentMaxX, currentMaxY);
+                    if (score < bestScore)
+                    {
+                        hasBest = true;
+                        bestScore = score;
+                        bestPointIndex = pi;
+                        bestOri = ori;
+                        bestL = l;
+                        bestW = w;
+                        bestH = h;
+                    }
+                }
+            }
+
+            if (!hasBest)
+                return false;
+
+            return PlaceBoxAtPointIndex(box, bestOri, bestL, bestW, bestH, bestPointIndex, points, pointsSet, placed, ref placedWeightGrams, pallet);
+        }
+
+        private static List<byte> BestFitLiteOrientations(PackBox box, byte preferred, OrientationFallbackMode orientationMode)
+        {
+            var result = new List<byte>(BestFitLiteMaxOrientations) { (byte)(preferred % 6) };
+            var seen = new HashSet<(int L, int W, int H)> { OrientedDims(box, result[0]) };
+
+            if (orientationMode == OrientationFallbackMode.GeneOnly)
+                return result;
+
+            foreach (byte ori in FallbackOrientations(box, result[0]))
+            {
+                if (result.Count >= BestFitLiteMaxOrientations)
+                    break;
+
+                if (seen.Add(OrientedDims(box, ori)))
+                    result.Add(ori);
+            }
+
+            return result;
+        }
+
+        private static double BestFitLiteScore(
+            PackBox box,
+            Int3 p,
+            int l,
+            int w,
+            int h,
+            IReadOnlyList<PlacedBox> placed,
+            int currentHeight,
+            int currentMaxX,
+            int currentMaxY)
+        {
+            int x = p.X, y = p.Y, z = p.Z;
+            int X = x + l, Y = y + w, Z = z + h;
+            int nextHeight = Math.Max(currentHeight, Z);
+            int nextMaxX = Math.Max(currentMaxX, X);
+            int nextMaxY = Math.Max(currentMaxY, Y);
+
+            long footprint = (long)l * w;
+            double supportRatio = z == 0 || footprint <= 0
+                ? 1.0
+                : Math.Min(1.0, SupportArea(x, y, X, Y, z, placed) / (double)footprint);
+
+            long sameTypeTouchArea = SameTypeTouchArea(box, x, y, z, X, Y, Z, placed);
+            long sideTouchArea = SideTouchArea(x, y, z, X, Y, Z, placed);
+            double spread = (double)nextMaxX * nextMaxY;
+            double distance = (double)x * x + (double)y * y + (double)z * z;
+
+            return
+                nextHeight * 1_000_000_000.0 +
+                spread * 120.0 +
+                z * 1_000_000.0 +
+                distance * 0.01 -
+                supportRatio * 500_000.0 -
+                sameTypeTouchArea * 0.25 -
+                sideTouchArea * 0.05;
+        }
+
+        private static bool PlaceBoxAtPointIndex(
+            PackBox box,
+            byte ori,
+            int l,
+            int w,
+            int h,
+            int pointIndex,
+            List<Int3> points,
+            HashSet<Int3> pointsSet,
+            List<PlacedBox> placed,
+            ref long placedWeightGrams,
+            PalletSpec pallet)
+        {
+            if (pointIndex < 0 || pointIndex >= points.Count)
+                return false;
+
+            var p = points[pointIndex];
+            var pb = new PlacedBox(box, box.Id, p.X, p.Y, p.Z, p.X + l, p.Y + w, p.Z + h);
+            placed.Add(pb);
+            placedWeightGrams += box.WeightGrams;
+
+            pointsSet.Remove(p);
+            points.RemoveAt(pointIndex);
+            AddPoints(points, pointsSet, pallet, pb);
+            return true;
         }
 
         private static IEnumerable<byte> FallbackOrientations(PackBox box, byte preferred)
@@ -269,6 +426,60 @@ namespace Palletes.Core
             int dx = Math.Min(ax2, bx2) - Math.Max(ax1, bx1);
             int dy = Math.Min(ay2, by2) - Math.Max(ay1, by1);
             return dx > 0 && dy > 0 ? (long)dx * dy : 0;
+        }
+
+        private static long SameTypeTouchArea(PackBox box, int x, int y, int z, int X, int Y, int Z, IReadOnlyList<PlacedBox> placed)
+        {
+            long area = 0;
+            for (int i = 0; i < placed.Count; i++)
+            {
+                var other = placed[i];
+                if (box.TypeKey != other.TypeKey)
+                    continue;
+
+                area += TouchArea(x, y, z, X, Y, Z, other);
+            }
+
+            return area;
+        }
+
+        private static long SideTouchArea(int x, int y, int z, int X, int Y, int Z, IReadOnlyList<PlacedBox> placed)
+        {
+            long area = 0;
+            for (int i = 0; i < placed.Count; i++)
+            {
+                area += TouchArea(x, y, z, X, Y, Z, placed[i]);
+            }
+
+            return area;
+        }
+
+        private static long TouchArea(int x, int y, int z, int X, int Y, int Z, PlacedBox other)
+        {
+            long area = 0;
+
+            if (X == other.x || other.X == x)
+            {
+                int dy = Math.Min(Y, other.Y) - Math.Max(y, other.y);
+                int dz = Math.Min(Z, other.Z) - Math.Max(z, other.z);
+                if (dy > 0 && dz > 0) area += (long)dy * dz;
+            }
+
+            if (Y == other.y || other.Y == y)
+            {
+                int dx = Math.Min(X, other.X) - Math.Max(x, other.x);
+                int dz = Math.Min(Z, other.Z) - Math.Max(z, other.z);
+                if (dx > 0 && dz > 0) area += (long)dx * dz;
+            }
+
+            if (Z == other.z || other.Z == z)
+            {
+                int dx = Math.Min(X, other.X) - Math.Max(x, other.x);
+                int dy = Math.Min(Y, other.Y) - Math.Max(y, other.y);
+                if (dx > 0 && dy > 0) area += (long)dx * dy;
+            }
+
+            return area;
         }
 
         private static void AddPoints(List<Int3> points, HashSet<Int3> pointsSet, PalletSpec pallet, PlacedBox b)

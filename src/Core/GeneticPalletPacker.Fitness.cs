@@ -12,9 +12,10 @@ namespace Palletes.Core
             IReadOnlyList<PackBox> boxes,
             PalletSpec pallet,
             FitnessWeights weights,
-            OrientationFallbackMode orientationMode)
+            OrientationFallbackMode orientationMode,
+            DecoderPlacementMode placementMode = DecoderPlacementMode.FirstFit)
         {
-            var placed = Decode(c, boxes, pallet, orientationMode);
+            var placed = Decode(c, boxes, pallet, orientationMode, placementMode);
             var metrics = Measure(placed, boxes.Count, pallet);
 
             c.PlacedCount = metrics.PlacedCount;

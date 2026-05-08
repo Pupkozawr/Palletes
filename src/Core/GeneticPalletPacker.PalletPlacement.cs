@@ -12,7 +12,9 @@ namespace Palletes.Core
             PalletSpec pallet,
             int seed,
             FitnessWeights weights,
-            OrientationFallbackMode orientationMode)
+            OrientationFallbackMode orientationMode,
+            PackingSearchMode searchMode,
+            int multiStartRandomStarts)
         {
             var remaining = boxes
                 .OrderByDescending(b => b.Volume)
@@ -26,7 +28,14 @@ namespace Palletes.Core
 
             while (remaining.Count > 0)
             {
-                var placed = PackSinglePallet(remaining, pallet, seed + palletIndex * 104729, weights, orientationMode);
+                var placed = PackSinglePalletByMode(
+                    remaining,
+                    pallet,
+                    seed + palletIndex * 104729,
+                    weights,
+                    orientationMode,
+                    searchMode,
+                    multiStartRandomStarts);
                 if (placed.Count == 0)
                 {
                     throw new InvalidOperationException($"Could not place any of the remaining {remaining.Count} boxes on pallet {palletIndex}.");

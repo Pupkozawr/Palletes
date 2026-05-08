@@ -12,7 +12,25 @@ namespace Palletes.Core
             => PackCsv(inPath, outPath, pallet, container: null, seed);
 
         public static void PackCsv(string inPath, string outPath, PalletSpec pallet, ContainerSpec? container, int seed = 12345)
-            => PackCsvCore(inPath, outPath, pallet, container, seed, DefaultWeights, OrientationFallbackMode.Fallback);
+            => PackCsvCore(inPath, outPath, pallet, container, seed, DefaultWeights, OrientationFallbackMode.Fallback, PackingSearchMode.Genetic, DefaultMultiStartRandomStarts);
+
+        public static void PackCsvMultiStartGreedy(
+            string inPath,
+            string outPath,
+            PalletSpec pallet,
+            ContainerSpec? container,
+            int seed = 12345,
+            int randomStarts = DefaultMultiStartRandomStarts)
+            => PackCsvCore(inPath, outPath, pallet, container, seed, DefaultWeights, OrientationFallbackMode.Fallback, PackingSearchMode.MultiStartGreedy, randomStarts);
+
+        public static void PackCsvMultiStartGreedyBestFit(
+            string inPath,
+            string outPath,
+            PalletSpec pallet,
+            ContainerSpec? container,
+            int seed = 12345,
+            int randomStarts = DefaultMultiStartRandomStarts)
+            => PackCsvCore(inPath, outPath, pallet, container, seed, DefaultWeights, OrientationFallbackMode.Fallback, PackingSearchMode.MultiStartGreedyBestFit, randomStarts);
 
         internal static void PackCsvForExperiment(
             string inPath,
@@ -21,7 +39,7 @@ namespace Palletes.Core
             ContainerSpec? container,
             int seed,
             FitnessWeights weights)
-            => PackCsvCore(inPath, outPath, pallet, container, seed, NormalizeWeights(weights), OrientationFallbackMode.Fallback);
+            => PackCsvCore(inPath, outPath, pallet, container, seed, NormalizeWeights(weights), OrientationFallbackMode.Fallback, PackingSearchMode.Genetic, DefaultMultiStartRandomStarts);
 
         internal static void PackCsvForOrientationExperiment(
             string inPath,
@@ -30,7 +48,7 @@ namespace Palletes.Core
             ContainerSpec? container,
             int seed,
             OrientationFallbackMode orientationMode)
-            => PackCsvCore(inPath, outPath, pallet, container, seed, DefaultWeights, orientationMode);
+            => PackCsvCore(inPath, outPath, pallet, container, seed, DefaultWeights, orientationMode, PackingSearchMode.Genetic, DefaultMultiStartRandomStarts);
 
         private static void PackCsvCore(
             string inPath,
@@ -39,7 +57,9 @@ namespace Palletes.Core
             ContainerSpec? container,
             int seed,
             FitnessWeights weights,
-            OrientationFallbackMode orientationMode)
+            OrientationFallbackMode orientationMode,
+            PackingSearchMode searchMode,
+            int multiStartRandomStarts)
         {
             if (pallet.Length <= 0 || pallet.Width <= 0)
                 throw new ArgumentOutOfRangeException(nameof(pallet), "Pallet base dimensions must be positive.");
@@ -48,7 +68,7 @@ namespace Palletes.Core
             var boxes = ExpandBoxes(items);
             var effectivePallet = NormalizePallet(pallet);
 
-            var packedPallets = PackAcrossPallets(boxes, effectivePallet, seed, weights, orientationMode);
+            var packedPallets = PackAcrossPallets(boxes, effectivePallet, seed, weights, orientationMode, searchMode, multiStartRandomStarts);
             List<PackedContainer> packedContainers;
             if (container is not null)
             {
@@ -93,6 +113,65 @@ namespace Palletes.Core
             var packBoxes = boxes.Select(b => new PackBox(b.Id, b.Id, b.L, b.W, b.H)).ToList();
             var effectivePallet = NormalizePallet(pallet);
             var placed = PackSinglePallet(packBoxes, effectivePallet, seed, DefaultWeights, OrientationFallbackMode.Fallback);
+
+            if (placed.Count != packBoxes.Count)
+                throw new InvalidOperationException($"Could not place all boxes on a single pallet. Placed={placed.Count}, total={packBoxes.Count}.");
+
+            return placed.Select(p => new BoxPlacement
+            {
+                Id = p.Id,
+                PalletId = effectivePallet.PalletType,
+                x = p.x,
+                y = p.y,
+                z = p.z,
+                X = p.X,
+                Y = p.Y,
+                Z = p.Z
+            }).ToList();
+        }
+
+        public static List<BoxPlacement> PackMultiStartGreedy(
+            IReadOnlyList<(string Id, int L, int W, int H)> boxes,
+            PalletSpec pallet,
+            int seed = 12345,
+            int randomStarts = DefaultMultiStartRandomStarts)
+        {
+            var packBoxes = boxes.Select(b => new PackBox(b.Id, b.Id, b.L, b.W, b.H)).ToList();
+            var effectivePallet = NormalizePallet(pallet);
+            var placed = PackSinglePalletMultiStartGreedy(packBoxes, effectivePallet, seed, DefaultWeights, OrientationFallbackMode.Fallback, randomStarts);
+
+            if (placed.Count != packBoxes.Count)
+                throw new InvalidOperationException($"Could not place all boxes on a single pallet. Placed={placed.Count}, total={packBoxes.Count}.");
+
+            return placed.Select(p => new BoxPlacement
+            {
+                Id = p.Id,
+                PalletId = effectivePallet.PalletType,
+                x = p.x,
+                y = p.y,
+                z = p.z,
+                X = p.X,
+                Y = p.Y,
+                Z = p.Z
+            }).ToList();
+        }
+
+        public static List<BoxPlacement> PackMultiStartGreedyBestFit(
+            IReadOnlyList<(string Id, int L, int W, int H)> boxes,
+            PalletSpec pallet,
+            int seed = 12345,
+            int randomStarts = DefaultMultiStartRandomStarts)
+        {
+            var packBoxes = boxes.Select(b => new PackBox(b.Id, b.Id, b.L, b.W, b.H)).ToList();
+            var effectivePallet = NormalizePallet(pallet);
+            var placed = PackSinglePalletMultiStartGreedy(
+                packBoxes,
+                effectivePallet,
+                seed,
+                DefaultWeights,
+                OrientationFallbackMode.Fallback,
+                randomStarts,
+                DecoderPlacementMode.BestFitLite);
 
             if (placed.Count != packBoxes.Count)
                 throw new InvalidOperationException($"Could not place all boxes on a single pallet. Placed={placed.Count}, total={packBoxes.Count}.");
