@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using Palletes.Core;
 using Palletes.Generation;
 using Palletes.Models;
@@ -36,6 +37,13 @@ namespace Palletes
                 Height = 2128
             };
 
+            if (args.Length == 0 || string.Equals(args[0], "demo", StringComparison.OrdinalIgnoreCase))
+            {
+                var demoOutDir = args.Length >= 2 ? args[1] : "out-demo";
+                var demoSeed = args.Length >= 3 && int.TryParse(args[2], out var ds) ? ds : 12345;
+                return RunDemo(demoOutDir, demoSeed, packingPallet, packingContainer);
+            }
+
             if (args.Length >= 1 && string.Equals(args[0], "pack", StringComparison.OrdinalIgnoreCase))
             {
                 if (args.Length < 3)
@@ -49,12 +57,12 @@ namespace Palletes
                 var seed = args.Length >= 4 && int.TryParse(args[3], out var s) ? s : 12345;
 
                 var sw = Stopwatch.StartNew();
-                GeneticPalletPacker.PackCsv(inPath, outPath, packingPallet, packingContainer, seed);
+                PalletPacker.PackCsv(inPath, outPath, packingPallet, packingContainer, seed);
                 sw.Stop();
 
                 Console.WriteLine($"Packed. Seed={seed}. Output: {Path.GetFullPath(outPath)}");
                 Console.WriteLine($"Packing time: {sw.ElapsedMilliseconds} ms ({sw.Elapsed:hh\\:mm\\:ss\\.fff})");
-                TryRenderPackingImage(inPath, outPath);
+                RenderPackingImage(inPath, outPath);
                 return 0;
             }
 
@@ -73,12 +81,12 @@ namespace Palletes
                 var effectiveRandomStarts = Math.Clamp(randomStarts, 0, 500);
 
                 var sw = Stopwatch.StartNew();
-                GeneticPalletPacker.PackCsvMultiStartGreedy(inPath, outPath, packingPallet, packingContainer, seed, effectiveRandomStarts);
+                PalletPacker.PackCsvMultiStartGreedy(inPath, outPath, packingPallet, packingContainer, seed, effectiveRandomStarts);
                 sw.Stop();
 
                 Console.WriteLine($"Packed with multi-start greedy. Seed={seed}. RandomStarts={effectiveRandomStarts}. Output: {Path.GetFullPath(outPath)}");
                 Console.WriteLine($"Packing time: {sw.ElapsedMilliseconds} ms ({sw.Elapsed:hh\\:mm\\:ss\\.fff})");
-                TryRenderPackingImage(inPath, outPath);
+                RenderPackingImage(inPath, outPath);
                 return 0;
             }
 
@@ -97,12 +105,12 @@ namespace Palletes
                 var effectiveRandomStarts = Math.Clamp(randomStarts, 0, 500);
 
                 var sw = Stopwatch.StartNew();
-                GeneticPalletPacker.PackCsvMultiStartGreedyBestFit(inPath, outPath, packingPallet, packingContainer, seed, effectiveRandomStarts);
+                PalletPacker.PackCsvMultiStartGreedyBestFit(inPath, outPath, packingPallet, packingContainer, seed, effectiveRandomStarts);
                 sw.Stop();
 
                 Console.WriteLine($"Packed with multi-start greedy best-fit-lite. Seed={seed}. RandomStarts={effectiveRandomStarts}. Output: {Path.GetFullPath(outPath)}");
                 Console.WriteLine($"Packing time: {sw.ElapsedMilliseconds} ms ({sw.Elapsed:hh\\:mm\\:ss\\.fff})");
-                TryRenderPackingImage(inPath, outPath);
+                RenderPackingImage(inPath, outPath);
                 return 0;
             }
 
@@ -170,34 +178,6 @@ namespace Palletes
                     packingContainer);
             }
 
-            if (args.Length == 0)
-            {
-                var seed = 12345;
-
-                Console.WriteLine("=== Запуск алгоритма упаковки ===");
-
-                var defaultInputCsv = FindFileUpwards("1.csv");
-                if (defaultInputCsv is null)
-                {
-                    Console.WriteLine("Предупреждение: не найден файл 1.csv для упаковки");
-                    return 1;
-                }
-
-                var defaultOutputCsv = Path.Combine(
-                    Path.GetDirectoryName(Path.GetFullPath(defaultInputCsv)) ?? Directory.GetCurrentDirectory(),
-                    "1-packed-out-container.csv");
-
-                var packStopwatch = Stopwatch.StartNew();
-                GeneticPalletPacker.PackCsv(defaultInputCsv, defaultOutputCsv, packingPallet, packingContainer, seed);
-                packStopwatch.Stop();
-
-                Console.WriteLine($"Упаковка завершена. Seed={seed}");
-                Console.WriteLine($"Входной файл: {Path.GetFullPath(defaultInputCsv)}");
-                Console.WriteLine($"Выходной файл: {Path.GetFullPath(defaultOutputCsv)}");
-                Console.WriteLine($"Время упаковки: {packStopwatch.ElapsedMilliseconds} ms ({packStopwatch.Elapsed:hh\\:mm\\:ss\\.fff})");
-                TryRenderPackingImage(defaultInputCsv, defaultOutputCsv);
-                return 0;
-            }
 
             var defaultOutDir = args.Length >= 1 ? args[0] : "out";
             var genSeed = args.Length >= 2 && int.TryParse(args[1], out var s3) ? s3 : 12345;
@@ -210,52 +190,94 @@ namespace Palletes
             var defaultGen = new DatasetGenerator(defaultProfile, generationPallet, defaultRng);
             var totalStopwatch = Stopwatch.StartNew();
 
-            Console.WriteLine("=== Генерация тестовых данных ===");
+            Console.WriteLine("=== Р“РµРЅРµСЂР°С†РёСЏ С‚РµСЃС‚РѕРІС‹С… РґР°РЅРЅС‹С… ===");
             defaultGen.GenerateAll(defaultOutDir);
 
             totalStopwatch.Stop();
 
-            Console.WriteLine($"Генерация завершена. Seed={genSeed}. Output: {Path.GetFullPath(defaultOutDir)}");
-            Console.WriteLine($"Время генерации: {totalStopwatch.ElapsedMilliseconds} ms ({totalStopwatch.Elapsed:hh\\:mm\\:ss\\.fff})");
+            Console.WriteLine($"Р“РµРЅРµСЂР°С†РёСЏ Р·Р°РІРµСЂС€РµРЅР°. Seed={genSeed}. Output: {Path.GetFullPath(defaultOutDir)}");
+            Console.WriteLine($"Р’СЂРµРјСЏ РіРµРЅРµСЂР°С†РёРё: {totalStopwatch.ElapsedMilliseconds} ms ({totalStopwatch.Elapsed:hh\\:mm\\:ss\\.fff})");
             Console.WriteLine();
 
-            Console.WriteLine("=== Запуск алгоритма упаковки ===");
+            Console.WriteLine("=== Р—Р°РїСѓСЃРє Р°Р»РіРѕСЂРёС‚РјР° СѓРїР°РєРѕРІРєРё ===");
             var firstOrderDir = Path.Combine(defaultOutDir, "group1", "1");
             var inputCsv = Path.Combine(firstOrderDir, "1.csv");
             var outputCsv = Path.Combine(defaultOutDir, "1-packed-out-container.csv");
 
-            if (File.Exists(inputCsv))
-            {
-                var packStopwatch = Stopwatch.StartNew();
-                GeneticPalletPacker.PackCsv(inputCsv, outputCsv, packingPallet, packingContainer, genSeed);
-                packStopwatch.Stop();
+            var packStopwatch = Stopwatch.StartNew();
+            PalletPacker.PackCsv(inputCsv, outputCsv, packingPallet, packingContainer, genSeed);
+            packStopwatch.Stop();
 
-                Console.WriteLine($"Упаковка завершена. Seed={genSeed}");
-                Console.WriteLine($"Входной файл: {Path.GetFullPath(inputCsv)}");
-                Console.WriteLine($"Выходной файл: {Path.GetFullPath(outputCsv)}");
-                Console.WriteLine($"Время упаковки: {packStopwatch.ElapsedMilliseconds} ms ({packStopwatch.Elapsed:hh\\:mm\\:ss\\.fff})");
-                TryRenderPackingImage(inputCsv, outputCsv);
-            }
-            else
-            {
-                Console.WriteLine($"Предупреждение: не найден файл {inputCsv} для упаковки");
-            }
+            Console.WriteLine($"РЈРїР°РєРѕРІРєР° Р·Р°РІРµСЂС€РµРЅР°. Seed={genSeed}");
+            Console.WriteLine($"Р’С…РѕРґРЅРѕР№ С„Р°Р№Р»: {Path.GetFullPath(inputCsv)}");
+            Console.WriteLine($"Р’С‹С…РѕРґРЅРѕР№ С„Р°Р№Р»: {Path.GetFullPath(outputCsv)}");
+            Console.WriteLine($"Р’СЂРµРјСЏ СѓРїР°РєРѕРІРєРё: {packStopwatch.ElapsedMilliseconds} ms ({packStopwatch.Elapsed:hh\\:mm\\:ss\\.fff})");
+            RenderPackingImage(inputCsv, outputCsv);
 
             return 0;
         }
 
-        private static void TryRenderPackingImage(string inputCsv, string outputCsv)
+        private static int RunDemo(string outDir, int seed, PalletSpec packingPallet, ContainerSpec packingContainer)
+        {
+            Directory.CreateDirectory(outDir);
+
+            var inputCsv = Path.Combine(outDir, "demo-order.csv");
+            var outputCsv = Path.Combine(outDir, "demo-packed.csv");
+            WriteDemoOrderCsv(inputCsv);
+
+            Console.WriteLine("=== Pallet packing demo ===");
+            Console.WriteLine("Algorithm: multi-start greedy best-fit-lite");
+            Console.WriteLine($"Seed: {seed}");
+            Console.WriteLine($"Input:  {Path.GetFullPath(inputCsv)}");
+
+            var packStopwatch = Stopwatch.StartNew();
+            PalletPacker.PackCsv(inputCsv, outputCsv, packingPallet, packingContainer, seed);
+            packStopwatch.Stop();
+
+            var layout = PackingCsvValidator.ReadPackingCsv(outputCsv);
+            int palletCount = Math.Max(1, layout.Pallets.Count);
+            int containerCount = Math.Max(1, layout.Containers.Count);
+            double maxHeight = layout.Boxes.Count == 0 ? 0.0 : layout.Boxes.Max(b => b.Z);
+
+            Console.WriteLine();
+            Console.WriteLine("Packing completed.");
+            Console.WriteLine($"Output: {Path.GetFullPath(outputCsv)}");
+            Console.WriteLine($"Boxes: {layout.Boxes.Count}; pallets: {palletCount}; containers: {containerCount}; max height: {maxHeight:F0} mm");
+            Console.WriteLine($"Packing time: {packStopwatch.ElapsedMilliseconds} ms ({packStopwatch.Elapsed:hh\\:mm\\:ss\\.fff})");
+
+            var imagePath = RenderPackingImage(inputCsv, outputCsv);
+
+            Console.WriteLine();
+            Console.WriteLine("Demo files are ready:");
+            Console.WriteLine($"  CSV layout: {Path.GetFullPath(outputCsv)}");
+            Console.WriteLine($"  PNG image:  {Path.GetFullPath(imagePath)}");
+
+            return 0;
+        }
+
+        private static void WriteDemoOrderCsv(string path)
+        {
+            var lines = new[]
+            {
+                "1",
+                "SKU,Quantity,Length,Width,Height,Weight,Strength,Caustic",
+                "1001,8,400,300,220,4500,5,0",
+                "1002,6,300,200,180,1800,4,0",
+                "1003,4,600,400,250,6500,5,0",
+                "1004,4,250,250,300,2100,3,0",
+                "1005,3,500,300,160,2800,4,0",
+                "1006,3,200,200,420,2400,2,0"
+            };
+
+            File.WriteAllLines(path, lines);
+        }
+
+        private static string RenderPackingImage(string inputCsv, string outputCsv)
         {
             var viewerPath = FindFileUpwards(Path.Combine("scripts", "pallet_viewer.py"));
-            if (viewerPath is null)
-            {
-                Console.WriteLine("Предупреждение: scripts\\pallet_viewer.py не найден, картинка не создана.");
-                return;
-            }
-
+            var pythonPath = FindPythonExecutable(viewerPath);
             var outputDirectory = Path.GetDirectoryName(Path.GetFullPath(outputCsv)) ?? Directory.GetCurrentDirectory();
             var imagePath = Path.Combine(outputDirectory, $"{Path.GetFileNameWithoutExtension(outputCsv)}-dashboard.png");
-            var pythonPath = FindPythonExecutable(viewerPath);
 
             Console.WriteLine();
             Console.WriteLine("=== Создание картинки упаковки ===");
@@ -264,7 +286,6 @@ namespace Palletes
             {
                 FileName = pythonPath,
                 UseShellExecute = false,
-                RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 CreateNoWindow = true
             };
@@ -280,42 +301,17 @@ namespace Palletes
             startInfo.ArgumentList.Add("--color-by");
             startInfo.ArgumentList.Add("status");
 
-            try
+            using var process = Process.Start(startInfo)!;
+            string stderr = process.StandardError.ReadToEnd();
+            process.WaitForExit();
+
+            if (process.ExitCode != 0)
             {
-                using var process = Process.Start(startInfo);
-                if (process is null)
-                {
-                    Console.WriteLine("Предупреждение: не удалось запустить Python для создания картинки.");
-                    return;
-                }
-
-                var stdoutTask = process.StandardOutput.ReadToEndAsync();
-                var stderrTask = process.StandardError.ReadToEndAsync();
-
-                if (!process.WaitForExit(120_000))
-                {
-                    process.Kill(entireProcessTree: true);
-                    Console.WriteLine("Предупреждение: создание картинки заняло слишком много времени и было остановлено.");
-                    return;
-                }
-
-                _ = stdoutTask.Result;
-                var stderr = stderrTask.Result;
-
-                if (process.ExitCode != 0)
-                {
-                    Console.WriteLine("Предупреждение: viewer завершился с ошибкой, картинка не создана.");
-                    if (!string.IsNullOrWhiteSpace(stderr))
-                        Console.WriteLine(stderr.Trim());
-                    return;
-                }
-
-                Console.WriteLine($"Картинка сохранена: {Path.GetFullPath(imagePath)}");
+                throw new InvalidOperationException("Не удалось создать картинку упаковки: " + stderr.Trim());
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Предупреждение: не удалось создать картинку упаковки: {ex.Message}");
-            }
+
+            Console.WriteLine($"Картинка сохранена: {Path.GetFullPath(imagePath)}");
+            return imagePath;
         }
 
         private static string FindPythonExecutable(string viewerPath)
@@ -329,7 +325,7 @@ namespace Palletes
             return "python";
         }
 
-        private static string? FindFileUpwards(string relativePath)
+        private static string FindFileUpwards(string relativePath)
         {
             foreach (var start in new[] { Directory.GetCurrentDirectory(), AppContext.BaseDirectory })
             {
@@ -344,7 +340,7 @@ namespace Palletes
                 }
             }
 
-            return null;
+            throw new FileNotFoundException($"Не найден файл {relativePath}.");
         }
     }
 }

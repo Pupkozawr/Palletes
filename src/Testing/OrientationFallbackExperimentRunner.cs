@@ -13,7 +13,7 @@ namespace Palletes.Testing
 {
     public static class OrientationFallbackExperimentRunner
     {
-        private sealed record Candidate(string Name, GeneticPalletPacker.OrientationFallbackMode Mode);
+        private sealed record Candidate(string Name, PalletPacker.OrientationFallbackMode Mode);
 
         private sealed class RunMetric
         {
@@ -38,19 +38,19 @@ namespace Palletes.Testing
             public string OrderName { get; init; } = "";
             public int Seed { get; init; }
             public bool BothOk { get; init; }
-            public int GeneOnlyPallets { get; init; }
+            public int PreferredOnlyPallets { get; init; }
             public int FallbackPallets { get; init; }
             public int DeltaPallets { get; init; }
-            public double GeneOnlyHeight { get; init; }
+            public double PreferredOnlyHeight { get; init; }
             public double FallbackHeight { get; init; }
             public double DeltaHeight { get; init; }
-            public double GeneOnlyEmptyVolume { get; init; }
+            public double PreferredOnlyEmptyVolume { get; init; }
             public double FallbackEmptyVolume { get; init; }
             public double DeltaEmptyVolume { get; init; }
-            public double GeneOnlyFill { get; init; }
+            public double PreferredOnlyFill { get; init; }
             public double FallbackFill { get; init; }
             public double DeltaFill { get; init; }
-            public long GeneOnlyTimeMs { get; init; }
+            public long PreferredOnlyTimeMs { get; init; }
             public long FallbackTimeMs { get; init; }
             public long DeltaTimeMs { get; init; }
         }
@@ -109,8 +109,8 @@ namespace Palletes.Testing
 
             var candidates = new List<Candidate>
             {
-                new("gene-only", GeneticPalletPacker.OrientationFallbackMode.GeneOnly),
-                new("fallback", GeneticPalletPacker.OrientationFallbackMode.Fallback)
+                new("preferred-only", PalletPacker.OrientationFallbackMode.PreferredOnly),
+                new("fallback", PalletPacker.OrientationFallbackMode.Fallback)
             };
 
             var runs = new List<RunMetric>();
@@ -132,7 +132,7 @@ namespace Palletes.Testing
 
                         try
                         {
-                            GeneticPalletPacker.PackCsvForOrientationExperiment(
+                            PalletPacker.PackCsvForOrientationExperiment(
                                 orderPath,
                                 outPath,
                                 packingPallet,
@@ -247,32 +247,32 @@ namespace Palletes.Testing
 
             foreach (var group in groups)
             {
-                var geneOnly = group.FirstOrDefault(r => r.Candidate == "gene-only");
+                var preferredOnly = group.FirstOrDefault(r => r.Candidate == "preferred-only");
                 var fallback = group.FirstOrDefault(r => r.Candidate == "fallback");
-                if (geneOnly is null || fallback is null)
+                if (preferredOnly is null || fallback is null)
                     continue;
 
-                bool bothOk = geneOnly.Ok && fallback.Ok;
+                bool bothOk = preferredOnly.Ok && fallback.Ok;
                 result.Add(new ComparisonMetric
                 {
                     OrderName = group.Key.OrderName,
                     Seed = group.Key.Seed,
                     BothOk = bothOk,
-                    GeneOnlyPallets = geneOnly.Pallets,
+                    PreferredOnlyPallets = preferredOnly.Pallets,
                     FallbackPallets = fallback.Pallets,
-                    DeltaPallets = fallback.Pallets - geneOnly.Pallets,
-                    GeneOnlyHeight = geneOnly.MaxHeight,
+                    DeltaPallets = fallback.Pallets - preferredOnly.Pallets,
+                    PreferredOnlyHeight = preferredOnly.MaxHeight,
                     FallbackHeight = fallback.MaxHeight,
-                    DeltaHeight = fallback.MaxHeight - geneOnly.MaxHeight,
-                    GeneOnlyEmptyVolume = geneOnly.EmptyVolume,
+                    DeltaHeight = fallback.MaxHeight - preferredOnly.MaxHeight,
+                    PreferredOnlyEmptyVolume = preferredOnly.EmptyVolume,
                     FallbackEmptyVolume = fallback.EmptyVolume,
-                    DeltaEmptyVolume = fallback.EmptyVolume - geneOnly.EmptyVolume,
-                    GeneOnlyFill = geneOnly.FillByUsedHeight,
+                    DeltaEmptyVolume = fallback.EmptyVolume - preferredOnly.EmptyVolume,
+                    PreferredOnlyFill = preferredOnly.FillByUsedHeight,
                     FallbackFill = fallback.FillByUsedHeight,
-                    DeltaFill = fallback.FillByUsedHeight - geneOnly.FillByUsedHeight,
-                    GeneOnlyTimeMs = geneOnly.TimeMs,
+                    DeltaFill = fallback.FillByUsedHeight - preferredOnly.FillByUsedHeight,
+                    PreferredOnlyTimeMs = preferredOnly.TimeMs,
                     FallbackTimeMs = fallback.TimeMs,
-                    DeltaTimeMs = fallback.TimeMs - geneOnly.TimeMs
+                    DeltaTimeMs = fallback.TimeMs - preferredOnly.TimeMs
                 });
             }
 
@@ -366,26 +366,26 @@ namespace Palletes.Testing
         private static void WriteComparisonCsv(string path, IReadOnlyList<ComparisonMetric> comparisons)
         {
             using var sw = new StreamWriter(path);
-            sw.WriteLine("order,seed,both_ok,gene_only_pallets,fallback_pallets,delta_pallets,gene_only_height,fallback_height,delta_height,gene_only_empty_volume,fallback_empty_volume,delta_empty_volume,gene_only_fill,fallback_fill,delta_fill,gene_only_time_ms,fallback_time_ms,delta_time_ms");
+            sw.WriteLine("order,seed,both_ok,preferred_only_pallets,fallback_pallets,delta_pallets,preferred_only_height,fallback_height,delta_height,preferred_only_empty_volume,fallback_empty_volume,delta_empty_volume,preferred_only_fill,fallback_fill,delta_fill,preferred_only_time_ms,fallback_time_ms,delta_time_ms");
             foreach (var c in comparisons)
             {
                 sw.WriteLine(string.Join(",",
                     Csv(c.OrderName),
                     c.Seed.ToString(CultureInfo.InvariantCulture),
                     c.BothOk ? "1" : "0",
-                    c.GeneOnlyPallets.ToString(CultureInfo.InvariantCulture),
+                    c.PreferredOnlyPallets.ToString(CultureInfo.InvariantCulture),
                     c.FallbackPallets.ToString(CultureInfo.InvariantCulture),
                     c.DeltaPallets.ToString(CultureInfo.InvariantCulture),
-                    c.GeneOnlyHeight.ToString("F3", CultureInfo.InvariantCulture),
+                    c.PreferredOnlyHeight.ToString("F3", CultureInfo.InvariantCulture),
                     c.FallbackHeight.ToString("F3", CultureInfo.InvariantCulture),
                     c.DeltaHeight.ToString("F3", CultureInfo.InvariantCulture),
-                    c.GeneOnlyEmptyVolume.ToString("F3", CultureInfo.InvariantCulture),
+                    c.PreferredOnlyEmptyVolume.ToString("F3", CultureInfo.InvariantCulture),
                     c.FallbackEmptyVolume.ToString("F3", CultureInfo.InvariantCulture),
                     c.DeltaEmptyVolume.ToString("F3", CultureInfo.InvariantCulture),
-                    c.GeneOnlyFill.ToString("F6", CultureInfo.InvariantCulture),
+                    c.PreferredOnlyFill.ToString("F6", CultureInfo.InvariantCulture),
                     c.FallbackFill.ToString("F6", CultureInfo.InvariantCulture),
                     c.DeltaFill.ToString("F6", CultureInfo.InvariantCulture),
-                    c.GeneOnlyTimeMs.ToString(CultureInfo.InvariantCulture),
+                    c.PreferredOnlyTimeMs.ToString(CultureInfo.InvariantCulture),
                     c.FallbackTimeMs.ToString(CultureInfo.InvariantCulture),
                     c.DeltaTimeMs.ToString(CultureInfo.InvariantCulture)));
             }
@@ -441,7 +441,7 @@ namespace Palletes.Testing
             sw.WriteLine();
             sw.WriteLine("## Per-order Delta");
             sw.WriteLine();
-            sw.WriteLine("Delta columns are `fallback - gene-only`, so negative pallets/empty/time is better.");
+            sw.WriteLine("Delta columns are `fallback - preferred-only`, so negative pallets/empty/time is better.");
             sw.WriteLine();
             sw.WriteLine("| order | seed | delta pallets | delta height | delta empty | delta fill | delta time ms |");
             sw.WriteLine("|---|---:|---:|---:|---:|---:|---:|");

@@ -5,7 +5,7 @@ using Palletes.Models;
 
 namespace Palletes.Core
 {
-    public static partial class GeneticPalletPacker
+    public static partial class PalletPacker
     {
         private static List<PackedPallet> PackAcrossPallets(
             IReadOnlyList<PackBox> boxes,

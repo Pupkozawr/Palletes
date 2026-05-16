@@ -4,7 +4,7 @@ using System.Linq;
 
 namespace Palletes.Core
 {
-    public static partial class GeneticPalletPacker
+    public static partial class PalletPacker
     {
         private readonly record struct Int3(int X, int Y, int Z);
 
@@ -20,13 +20,12 @@ namespace Palletes.Core
 
         internal enum OrientationFallbackMode
         {
-            GeneOnly,
+            PreferredOnly,
             Fallback
         }
 
         internal enum PackingSearchMode
         {
-            Genetic,
             MultiStartGreedy,
             MultiStartGreedyBestFit
         }
@@ -146,7 +145,7 @@ namespace Palletes.Core
         private const double MinSupportAreaRatio = 0.65;
         private const int MinSupportCapacityGrams = 25_000;
 
-        private sealed class Chromosome
+        private sealed class PackingCandidate
         {
             public int[] Order { get; }
             public byte[] Orientation { get; }
@@ -155,15 +154,15 @@ namespace Palletes.Core
             public int Height { get; set; }
             public long EmptyVolume { get; set; }
 
-            public Chromosome(int n)
+            public PackingCandidate(int n)
             {
                 Order = new int[n];
                 Orientation = new byte[n];
             }
 
-            public Chromosome Clone()
+            public PackingCandidate Clone()
             {
-                var c = new Chromosome(Order.Length);
+                var c = new PackingCandidate(Order.Length);
                 Array.Copy(Order, c.Order, Order.Length);
                 Array.Copy(Orientation, c.Orientation, Orientation.Length);
                 c.Fitness = Fitness;

@@ -55,7 +55,7 @@ namespace Palletes.Testing
                 try
                 {
                     var sw = Stopwatch.StartNew();
-                    GeneticPalletPacker.PackCsv(sampleIn, sampleOut, packingPallet, packingContainer, seed);
+                    PalletPacker.PackCsv(sampleIn, sampleOut, packingPallet, packingContainer, seed);
                     sw.Stop();
                     Console.WriteLine($"OK: {sampleOut}");
                     Console.WriteLine($"Time: {sw.ElapsedMilliseconds} ms");

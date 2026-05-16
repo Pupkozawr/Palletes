@@ -6,7 +6,7 @@ using Palletes.Models;
 
 namespace Palletes.Core
 {
-    public static partial class GeneticPalletPacker
+    public static partial class PalletPacker
     {
         private static List<PlacedBox> PackSinglePalletByMode(
             IReadOnlyList<PackBox> boxes,
@@ -35,7 +35,7 @@ namespace Palletes.Core
                     orientationMode,
                     multiStartRandomStarts,
                     DecoderPlacementMode.BestFitLite),
-                _ => PackSinglePallet(boxes, pallet, seed, weights, orientationMode)
+                _ => throw new ArgumentOutOfRangeException(nameof(searchMode), searchMode, "Unknown packing search mode.")
             };
         }
 
@@ -53,9 +53,9 @@ namespace Palletes.Core
 
             var rng = new Rng(seed);
             int safeRandomStarts = Math.Clamp(randomStarts, 0, 500);
-            Chromosome? best = null;
+            PackingCandidate? best = null;
 
-            void Consider(Chromosome candidate)
+            void Consider(PackingCandidate candidate)
             {
                 Evaluate(candidate, boxes, pallet, weights, orientationMode, placementMode);
                 if (best is null || IsBetter(candidate, best))
@@ -71,7 +71,7 @@ namespace Palletes.Core
 
             for (int i = 0; i < safeRandomStarts; i++)
             {
-                Chromosome candidate = i % 3 == 0
+                PackingCandidate candidate = i % 3 == 0
                     ? CreateRandomGreedyStart(boxes, rng)
                     : CreateBiasedRandomGreedyStart(boxes, rng, i % 3);
 
@@ -81,13 +81,13 @@ namespace Palletes.Core
             return Decode(best!, boxes, pallet, orientationMode, placementMode);
         }
 
-        private static IEnumerable<Chromosome> CreateDeterministicGreedyStarts(IReadOnlyList<PackBox> boxes)
+        private static IEnumerable<PackingCandidate> CreateDeterministicGreedyStarts(IReadOnlyList<PackBox> boxes)
         {
             int n = boxes.Count;
             var indices = Enumerable.Range(0, n);
 
-            yield return CreateHeuristicChromosome(boxes, descendingVolume: true);
-            yield return CreateHeuristicChromosome(boxes, descendingVolume: false);
+            yield return CreateHeuristicPackingCandidate(boxes, descendingVolume: true);
+            yield return CreateHeuristicPackingCandidate(boxes, descendingVolume: false);
 
             yield return CreateGreedyStart(
                 boxes,
@@ -176,12 +176,12 @@ namespace Palletes.Core
                 static _ => (byte)0);
         }
 
-        private static Chromosome CreateGreedyStart(
+        private static PackingCandidate CreateGreedyStart(
             IReadOnlyList<PackBox> boxes,
             int[] order,
             Func<PackBox, byte> chooseOrientation)
         {
-            var c = new Chromosome(boxes.Count);
+            var c = new PackingCandidate(boxes.Count);
             for (int pos = 0; pos < order.Length; pos++)
             {
                 int boxIndex = order[pos];
@@ -192,7 +192,7 @@ namespace Palletes.Core
             return c;
         }
 
-        private static Chromosome CreateRandomGreedyStart(IReadOnlyList<PackBox> boxes, Rng rng)
+        private static PackingCandidate CreateRandomGreedyStart(IReadOnlyList<PackBox> boxes, Rng rng)
         {
             var order = Enumerable.Range(0, boxes.Count).ToArray();
             rng.Shuffle(order);
@@ -203,7 +203,7 @@ namespace Palletes.Core
                 b => rng.Bool(0.75) ? ChooseHeuristicOrientation(b) : (byte)rng.Int(0, 5));
         }
 
-        private static Chromosome CreateBiasedRandomGreedyStart(IReadOnlyList<PackBox> boxes, Rng rng, int variant)
+        private static PackingCandidate CreateBiasedRandomGreedyStart(IReadOnlyList<PackBox> boxes, Rng rng, int variant)
         {
             long maxVolume = Math.Max(1L, boxes.Max(static b => b.Volume));
             long maxBaseArea = Math.Max(1L, boxes.Max(static b => (long)b.L * b.W));
@@ -242,6 +242,65 @@ namespace Palletes.Core
                 boxes,
                 order,
                 b => rng.Bool(0.85) ? ChooseHeuristicOrientation(b) : (byte)rng.Int(0, 5));
+        }
+
+        private static bool IsBetter(PackingCandidate candidate, PackingCandidate incumbent)
+        {
+            if (candidate.Fitness != incumbent.Fitness)
+                return candidate.Fitness > incumbent.Fitness;
+
+            if (candidate.PlacedCount != incumbent.PlacedCount)
+                return candidate.PlacedCount > incumbent.PlacedCount;
+
+            if (candidate.Height != incumbent.Height)
+                return candidate.Height < incumbent.Height;
+
+            return candidate.EmptyVolume < incumbent.EmptyVolume;
+        }
+
+        private static PackingCandidate CreateHeuristicPackingCandidate(IReadOnlyList<PackBox> boxes, bool descendingVolume)
+        {
+            var order = Enumerable.Range(0, boxes.Count)
+                .OrderBy(i => descendingVolume ? 0 : 1)
+                .ThenByDescending(i => descendingVolume ? boxes[i].Volume : (long)boxes[i].L * boxes[i].W)
+                .ThenByDescending(i => boxes[i].WeightGrams)
+                .ThenByDescending(i => boxes[i].Strength)
+                .ThenByDescending(i => boxes[i].H)
+                .ThenBy(i => boxes[i].Id, StringComparer.Ordinal)
+                .ToArray();
+
+            if (!descendingVolume)
+            {
+                Array.Reverse(order);
+            }
+
+            var candidate = new PackingCandidate(boxes.Count);
+            for (int i = 0; i < boxes.Count; i++)
+            {
+                candidate.Order[i] = order[i];
+                candidate.Orientation[i] = ChooseHeuristicOrientation(boxes[order[i]]);
+            }
+
+            return candidate;
+        }
+
+        private static byte ChooseHeuristicOrientation(PackBox box)
+        {
+            byte bestOrientation = 0;
+            long bestScore = long.MinValue;
+
+            for (byte orientation = 0; orientation < 6; orientation++)
+            {
+                var (l, w, h) = OrientedDims(box, orientation);
+                long score = (long)l * w * 10 - h;
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestOrientation = orientation;
+                }
+            }
+
+            return bestOrientation;
         }
     }
 }

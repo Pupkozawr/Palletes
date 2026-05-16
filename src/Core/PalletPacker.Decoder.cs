@@ -5,10 +5,10 @@ using Palletes.Models;
 
 namespace Palletes.Core
 {
-    public static partial class GeneticPalletPacker
+    public static partial class PalletPacker
     {
         private static List<PlacedBox> Decode(
-            Chromosome c,
+            PackingCandidate c,
             IReadOnlyList<PackBox> boxes,
             PalletSpec pallet,
             OrientationFallbackMode orientationMode,
@@ -36,7 +36,7 @@ namespace Palletes.Core
                 if (TryPlaceBox(box, ori, points, pointsSet, placed, ref placedWeightGrams, pallet))
                     continue;
 
-                if (orientationMode == OrientationFallbackMode.GeneOnly)
+                if (orientationMode == OrientationFallbackMode.PreferredOnly)
                     continue;
 
                 foreach (byte fallbackOri in FallbackOrientations(box, ori))
@@ -165,7 +165,7 @@ namespace Palletes.Core
             var result = new List<byte>(BestFitLiteMaxOrientations) { (byte)(preferred % 6) };
             var seen = new HashSet<(int L, int W, int H)> { OrientedDims(box, result[0]) };
 
-            if (orientationMode == OrientationFallbackMode.GeneOnly)
+            if (orientationMode == OrientationFallbackMode.PreferredOnly)
                 return result;
 
             foreach (byte ori in FallbackOrientations(box, result[0]))

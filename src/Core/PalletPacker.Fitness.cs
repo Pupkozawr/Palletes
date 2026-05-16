@@ -5,10 +5,10 @@ using Palletes.Models;
 
 namespace Palletes.Core
 {
-    public static partial class GeneticPalletPacker
+    public static partial class PalletPacker
     {
         private static void Evaluate(
-            Chromosome c,
+            PackingCandidate c,
             IReadOnlyList<PackBox> boxes,
             PalletSpec pallet,
             FitnessWeights weights,

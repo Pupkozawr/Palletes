@@ -60,22 +60,22 @@ namespace Palletes.Testing
             public int Boxes { get; init; }
             public int Seed { get; init; }
             public bool BothOk { get; init; }
-            public int GaPallets { get; init; }
+            public int BaselinePallets { get; init; }
             public int CandidatePallets { get; init; }
             public int DeltaPallets { get; init; }
-            public double GaHeight { get; init; }
+            public double BaselineHeight { get; init; }
             public double CandidateHeight { get; init; }
             public double DeltaHeight { get; init; }
-            public double GaEmptyVolume { get; init; }
+            public double BaselineEmptyVolume { get; init; }
             public double CandidateEmptyVolume { get; init; }
             public double DeltaEmptyVolume { get; init; }
-            public double GaFill { get; init; }
+            public double BaselineFill { get; init; }
             public double CandidateFill { get; init; }
             public double DeltaFill { get; init; }
-            public double GaSupport { get; init; }
+            public double BaselineSupport { get; init; }
             public double CandidateSupport { get; init; }
             public double DeltaSupport { get; init; }
-            public long GaTimeMs { get; init; }
+            public long BaselineTimeMs { get; init; }
             public long CandidateTimeMs { get; init; }
             public long DeltaTimeMs { get; init; }
             public double Speedup { get; init; }
@@ -149,7 +149,6 @@ namespace Palletes.Testing
 
             var candidates = new List<Candidate>
             {
-                new("ga"),
                 new("multi-start-greedy"),
                 new("multi-start-greedy-bestfit")
             };
@@ -173,13 +172,9 @@ namespace Palletes.Testing
                         var sw = Stopwatch.StartNew();
                         try
                         {
-                            if (candidate.Name == "ga")
+                            if (candidate.Name == "multi-start-greedy-bestfit")
                             {
-                                GeneticPalletPacker.PackCsv(order.Path, outPath, packingPallet, packingContainer, runSeed);
-                            }
-                            else if (candidate.Name == "multi-start-greedy-bestfit")
-                            {
-                                GeneticPalletPacker.PackCsvMultiStartGreedyBestFit(
+                                PalletPacker.PackCsvMultiStartGreedyBestFit(
                                     order.Path,
                                     outPath,
                                     packingPallet,
@@ -189,7 +184,7 @@ namespace Palletes.Testing
                             }
                             else
                             {
-                                GeneticPalletPacker.PackCsvMultiStartGreedy(
+                                PalletPacker.PackCsvMultiStartGreedy(
                                     order.Path,
                                     outPath,
                                     packingPallet,
@@ -412,45 +407,46 @@ namespace Palletes.Testing
 
         private static List<ComparisonMetric> Compare(IReadOnlyList<RunMetric> runs)
         {
+            const string baselineName = "multi-start-greedy";
             var result = new List<ComparisonMetric>();
 
             foreach (var group in runs.GroupBy(r => (r.OrderName, r.Seed)))
             {
-                var ga = group.FirstOrDefault(r => r.Candidate == "ga");
-                if (ga is null)
+                var baseline = group.FirstOrDefault(r => r.Candidate == baselineName);
+                if (baseline is null)
                     continue;
 
-                foreach (var candidate in group.Where(r => r.Candidate != "ga").OrderBy(r => r.Candidate, StringComparer.Ordinal))
+                foreach (var candidate in group.Where(r => r.Candidate != baselineName).OrderBy(r => r.Candidate, StringComparer.Ordinal))
                 {
-                    bool bothOk = ga.Ok && candidate.Ok;
+                    bool bothOk = baseline.Ok && candidate.Ok;
                     result.Add(new ComparisonMetric
                     {
                         Candidate = candidate.Candidate,
                         OrderName = group.Key.OrderName,
-                        Group = ga.Group,
-                        Scenario = ga.Scenario,
-                        Boxes = Math.Max(ga.InputBoxes, candidate.InputBoxes),
+                        Group = baseline.Group,
+                        Scenario = baseline.Scenario,
+                        Boxes = Math.Max(baseline.InputBoxes, candidate.InputBoxes),
                         Seed = group.Key.Seed,
                         BothOk = bothOk,
-                        GaPallets = ga.Pallets,
+                        BaselinePallets = baseline.Pallets,
                         CandidatePallets = candidate.Pallets,
-                        DeltaPallets = candidate.Pallets - ga.Pallets,
-                        GaHeight = ga.MaxHeight,
+                        DeltaPallets = candidate.Pallets - baseline.Pallets,
+                        BaselineHeight = baseline.MaxHeight,
                         CandidateHeight = candidate.MaxHeight,
-                        DeltaHeight = candidate.MaxHeight - ga.MaxHeight,
-                        GaEmptyVolume = ga.EmptyVolume,
+                        DeltaHeight = candidate.MaxHeight - baseline.MaxHeight,
+                        BaselineEmptyVolume = baseline.EmptyVolume,
                         CandidateEmptyVolume = candidate.EmptyVolume,
-                        DeltaEmptyVolume = candidate.EmptyVolume - ga.EmptyVolume,
-                        GaFill = ga.FillByUsedHeight,
+                        DeltaEmptyVolume = candidate.EmptyVolume - baseline.EmptyVolume,
+                        BaselineFill = baseline.FillByUsedHeight,
                         CandidateFill = candidate.FillByUsedHeight,
-                        DeltaFill = candidate.FillByUsedHeight - ga.FillByUsedHeight,
-                        GaSupport = ga.AvgSupport,
+                        DeltaFill = candidate.FillByUsedHeight - baseline.FillByUsedHeight,
+                        BaselineSupport = baseline.AvgSupport,
                         CandidateSupport = candidate.AvgSupport,
-                        DeltaSupport = candidate.AvgSupport - ga.AvgSupport,
-                        GaTimeMs = ga.TimeMs,
+                        DeltaSupport = candidate.AvgSupport - baseline.AvgSupport,
+                        BaselineTimeMs = baseline.TimeMs,
                         CandidateTimeMs = candidate.TimeMs,
-                        DeltaTimeMs = candidate.TimeMs - ga.TimeMs,
-                        Speedup = candidate.TimeMs > 0 ? ga.TimeMs / (double)candidate.TimeMs : 0.0
+                        DeltaTimeMs = candidate.TimeMs - baseline.TimeMs,
+                        Speedup = candidate.TimeMs > 0 ? baseline.TimeMs / (double)candidate.TimeMs : 0.0
                     });
                 }
             }
@@ -573,7 +569,7 @@ namespace Palletes.Testing
         private static void WriteComparisonCsv(string path, IReadOnlyList<ComparisonMetric> comparisons)
         {
             using var sw = new StreamWriter(path);
-            sw.WriteLine("candidate,order,group,scenario,boxes,seed,both_ok,ga_pallets,candidate_pallets,delta_pallets,ga_height,candidate_height,delta_height,ga_empty_volume,candidate_empty_volume,delta_empty_volume,ga_fill,candidate_fill,delta_fill,ga_support,candidate_support,delta_support,ga_time_ms,candidate_time_ms,delta_time_ms,speedup_ga_over_candidate");
+            sw.WriteLine("candidate,order,group,scenario,boxes,seed,both_ok,baseline_pallets,candidate_pallets,delta_pallets,baseline_height,candidate_height,delta_height,baseline_empty_volume,candidate_empty_volume,delta_empty_volume,baseline_fill,candidate_fill,delta_fill,baseline_support,candidate_support,delta_support,baseline_time_ms,candidate_time_ms,delta_time_ms,speedup_baseline_over_candidate");
             foreach (var c in comparisons)
             {
                 sw.WriteLine(string.Join(",",
@@ -584,22 +580,22 @@ namespace Palletes.Testing
                     c.Boxes.ToString(CultureInfo.InvariantCulture),
                     c.Seed.ToString(CultureInfo.InvariantCulture),
                     c.BothOk ? "1" : "0",
-                    c.GaPallets.ToString(CultureInfo.InvariantCulture),
+                    c.BaselinePallets.ToString(CultureInfo.InvariantCulture),
                     c.CandidatePallets.ToString(CultureInfo.InvariantCulture),
                     c.DeltaPallets.ToString(CultureInfo.InvariantCulture),
-                    c.GaHeight.ToString("F3", CultureInfo.InvariantCulture),
+                    c.BaselineHeight.ToString("F3", CultureInfo.InvariantCulture),
                     c.CandidateHeight.ToString("F3", CultureInfo.InvariantCulture),
                     c.DeltaHeight.ToString("F3", CultureInfo.InvariantCulture),
-                    c.GaEmptyVolume.ToString("F3", CultureInfo.InvariantCulture),
+                    c.BaselineEmptyVolume.ToString("F3", CultureInfo.InvariantCulture),
                     c.CandidateEmptyVolume.ToString("F3", CultureInfo.InvariantCulture),
                     c.DeltaEmptyVolume.ToString("F3", CultureInfo.InvariantCulture),
-                    c.GaFill.ToString("F6", CultureInfo.InvariantCulture),
+                    c.BaselineFill.ToString("F6", CultureInfo.InvariantCulture),
                     c.CandidateFill.ToString("F6", CultureInfo.InvariantCulture),
                     c.DeltaFill.ToString("F6", CultureInfo.InvariantCulture),
-                    c.GaSupport.ToString("F6", CultureInfo.InvariantCulture),
+                    c.BaselineSupport.ToString("F6", CultureInfo.InvariantCulture),
                     c.CandidateSupport.ToString("F6", CultureInfo.InvariantCulture),
                     c.DeltaSupport.ToString("F6", CultureInfo.InvariantCulture),
-                    c.GaTimeMs.ToString(CultureInfo.InvariantCulture),
+                    c.BaselineTimeMs.ToString(CultureInfo.InvariantCulture),
                     c.CandidateTimeMs.ToString(CultureInfo.InvariantCulture),
                     c.DeltaTimeMs.ToString(CultureInfo.InvariantCulture),
                     c.Speedup.ToString("F6", CultureInfo.InvariantCulture)));
@@ -673,9 +669,9 @@ namespace Palletes.Testing
             sw.WriteLine();
             sw.WriteLine("## Pairwise Delta");
             sw.WriteLine();
-            sw.WriteLine("Delta columns are `candidate - ga`. Negative pallets, height, empty volume and time are better for the candidate; positive fill/support are better for the candidate.");
+            sw.WriteLine("Delta columns are `candidate - multi-start-greedy`. Negative pallets, height, empty volume and time are better for the candidate; positive fill/support are better for the candidate.");
             sw.WriteLine();
-            sw.WriteLine("| candidate | order | boxes | seed | delta pallets | delta height | delta empty | delta fill | delta support | speedup ga/candidate |");
+            sw.WriteLine("| candidate | order | boxes | seed | delta pallets | delta height | delta empty | delta fill | delta support | speedup baseline/candidate |");
             sw.WriteLine("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|");
             foreach (var c in comparisons)
             {
@@ -824,7 +820,7 @@ namespace Palletes.Testing
             const int plotHeight = 310;
 
             var rows = comparisons.Take(18).ToList();
-            double max = Math.Max(1.0, rows.SelectMany(c => new[] { (double)c.GaTimeMs, c.CandidateTimeMs }).DefaultIfEmpty(1.0).Max() * 1.15);
+            double max = Math.Max(1.0, rows.SelectMany(c => new[] { (double)c.BaselineTimeMs, c.CandidateTimeMs }).DefaultIfEmpty(1.0).Max() * 1.15);
             double slot = plotWidth / (double)Math.Max(1, rows.Count);
             double barWidth = Math.Min(18.0, slot * 0.32);
 
@@ -836,12 +832,12 @@ namespace Palletes.Testing
             {
                 var c = rows[i];
                 double baseX = left + i * slot + slot / 2.0;
-                DrawSingleBar(sw, baseX - barWidth - 2, top, plotHeight, max, c.GaTimeMs, barWidth, ColorFor("ga"));
+                DrawSingleBar(sw, baseX - barWidth - 2, top, plotHeight, max, c.BaselineTimeMs, barWidth, ColorFor("multi-start-greedy"));
                 DrawSingleBar(sw, baseX + 2, top, plotHeight, max, c.CandidateTimeMs, barWidth, ColorFor(c.Candidate));
                 sw.WriteLine($"<text x='{baseX:F1}' y='{top + plotHeight + 18}' text-anchor='end' font-size='10' transform='rotate(-35 {baseX:F1},{top + plotHeight + 18})'>{Escape(c.OrderName + " " + ShortName(c.Candidate))}</text>");
             }
 
-            DrawLegend(sw, width - 330, top, new[] { "ga", "multi-start-greedy", "multi-start-greedy-bestfit" });
+            DrawLegend(sw, width - 330, top, new[] { "multi-start-greedy", "multi-start-greedy-bestfit" });
             WriteSvgFooter(sw);
         }
 
@@ -884,7 +880,7 @@ namespace Palletes.Testing
             const int plotHeight = 270;
 
             var rows = comparisons.Take(18).ToList();
-            double max = Math.Max(1.0, rows.SelectMany(c => new[] { (double)c.GaPallets, c.CandidatePallets }).DefaultIfEmpty(1.0).Max() + 1);
+            double max = Math.Max(1.0, rows.SelectMany(c => new[] { (double)c.BaselinePallets, c.CandidatePallets }).DefaultIfEmpty(1.0).Max() + 1);
             double slot = plotWidth / (double)Math.Max(1, rows.Count);
             double barWidth = Math.Min(18.0, slot * 0.32);
 
@@ -896,12 +892,12 @@ namespace Palletes.Testing
             {
                 var c = rows[i];
                 double baseX = left + i * slot + slot / 2.0;
-                DrawSingleBar(sw, baseX - barWidth - 2, top, plotHeight, max, c.GaPallets, barWidth, ColorFor("ga"));
+                DrawSingleBar(sw, baseX - barWidth - 2, top, plotHeight, max, c.BaselinePallets, barWidth, ColorFor("multi-start-greedy"));
                 DrawSingleBar(sw, baseX + 2, top, plotHeight, max, c.CandidatePallets, barWidth, ColorFor(c.Candidate));
                 sw.WriteLine($"<text x='{baseX:F1}' y='{top + plotHeight + 18}' text-anchor='end' font-size='10' transform='rotate(-35 {baseX:F1},{top + plotHeight + 18})'>{Escape(c.OrderName + " " + ShortName(c.Candidate))}</text>");
             }
 
-            DrawLegend(sw, width - 330, top, new[] { "ga", "multi-start-greedy", "multi-start-greedy-bestfit" });
+            DrawLegend(sw, width - 330, top, new[] { "multi-start-greedy", "multi-start-greedy-bestfit" });
             WriteSvgFooter(sw);
         }
 
@@ -971,9 +967,9 @@ namespace Palletes.Testing
             {
                 var list = group.ToList();
                 Console.WriteLine($"{group.Key}:");
-                Console.WriteLine($"  fewer pallets than GA: {list.Count(c => c.DeltaPallets < 0)}");
-                Console.WriteLine($"  more pallets than GA:  {list.Count(c => c.DeltaPallets > 0)}");
-                Console.WriteLine($"  avg speedup GA/candidate: {list.Average(c => c.Speedup):F2}x");
+                Console.WriteLine($"  fewer pallets than baseline: {list.Count(c => c.DeltaPallets < 0)}");
+                Console.WriteLine($"  more pallets than baseline:  {list.Count(c => c.DeltaPallets > 0)}");
+                Console.WriteLine($"  avg speedup baseline/candidate: {list.Average(c => c.Speedup):F2}x");
                 Console.WriteLine($"  avg delta fill: {list.Average(c => c.DeltaFill):P2}");
                 Console.WriteLine($"  avg delta empty volume: {list.Average(c => c.DeltaEmptyVolume):F0} mm^3");
             }
@@ -992,7 +988,7 @@ namespace Palletes.Testing
         {
             return candidate switch
             {
-                "ga" => "#2563eb",
+                "multi-start-greedy" => "#2563eb",
                 "multi-start-greedy-bestfit" => "#16a34a",
                 _ => "#f97316"
             };

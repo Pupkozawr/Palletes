@@ -6,13 +6,13 @@ using Palletes.Utils;
 
 namespace Palletes.Core
 {
-    public static partial class GeneticPalletPacker
+    public static partial class PalletPacker
     {
         public static void PackCsv(string inPath, string outPath, PalletSpec pallet, int seed = 12345)
             => PackCsv(inPath, outPath, pallet, container: null, seed);
 
         public static void PackCsv(string inPath, string outPath, PalletSpec pallet, ContainerSpec? container, int seed = 12345)
-            => PackCsvCore(inPath, outPath, pallet, container, seed, DefaultWeights, OrientationFallbackMode.Fallback, PackingSearchMode.Genetic, DefaultMultiStartRandomStarts);
+            => PackCsvCore(inPath, outPath, pallet, container, seed, DefaultWeights, OrientationFallbackMode.Fallback, PackingSearchMode.MultiStartGreedyBestFit, DefaultMultiStartRandomStarts);
 
         public static void PackCsvMultiStartGreedy(
             string inPath,
@@ -39,7 +39,7 @@ namespace Palletes.Core
             ContainerSpec? container,
             int seed,
             FitnessWeights weights)
-            => PackCsvCore(inPath, outPath, pallet, container, seed, NormalizeWeights(weights), OrientationFallbackMode.Fallback, PackingSearchMode.Genetic, DefaultMultiStartRandomStarts);
+            => PackCsvCore(inPath, outPath, pallet, container, seed, NormalizeWeights(weights), OrientationFallbackMode.Fallback, PackingSearchMode.MultiStartGreedyBestFit, DefaultMultiStartRandomStarts);
 
         internal static void PackCsvForOrientationExperiment(
             string inPath,
@@ -48,7 +48,7 @@ namespace Palletes.Core
             ContainerSpec? container,
             int seed,
             OrientationFallbackMode orientationMode)
-            => PackCsvCore(inPath, outPath, pallet, container, seed, DefaultWeights, orientationMode, PackingSearchMode.Genetic, DefaultMultiStartRandomStarts);
+            => PackCsvCore(inPath, outPath, pallet, container, seed, DefaultWeights, orientationMode, PackingSearchMode.MultiStartGreedyBestFit, DefaultMultiStartRandomStarts);
 
         private static void PackCsvCore(
             string inPath,
@@ -112,7 +112,14 @@ namespace Palletes.Core
         {
             var packBoxes = boxes.Select(b => new PackBox(b.Id, b.Id, b.L, b.W, b.H)).ToList();
             var effectivePallet = NormalizePallet(pallet);
-            var placed = PackSinglePallet(packBoxes, effectivePallet, seed, DefaultWeights, OrientationFallbackMode.Fallback);
+            var placed = PackSinglePalletMultiStartGreedy(
+                packBoxes,
+                effectivePallet,
+                seed,
+                DefaultWeights,
+                OrientationFallbackMode.Fallback,
+                DefaultMultiStartRandomStarts,
+                DecoderPlacementMode.BestFitLite);
 
             if (placed.Count != packBoxes.Count)
                 throw new InvalidOperationException($"Could not place all boxes on a single pallet. Placed={placed.Count}, total={packBoxes.Count}.");

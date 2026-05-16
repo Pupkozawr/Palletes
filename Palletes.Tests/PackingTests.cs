@@ -150,7 +150,7 @@ public sealed class PackingTests
             ("f", 400, 200, 200),
         };
 
-        var placements = GeneticPalletPacker.Pack(boxes, pallet, seed: 1);
+        var placements = PalletPacker.Pack(boxes, pallet, seed: 1);
 
         Assert.Equal(boxes.Count, placements.Count);
         AssertValidPacking(placements, pallet);
@@ -167,7 +167,7 @@ public sealed class PackingTests
             boxes.Add(($"c{i}", 200, 200, 200));
         }
 
-        var placements = GeneticPalletPacker.Pack(boxes, pallet, seed: 12345);
+        var placements = PalletPacker.Pack(boxes, pallet, seed: 12345);
 
         Assert.Equal(boxes.Count, placements.Count);
         AssertValidPacking(placements, pallet);
@@ -189,7 +189,7 @@ public sealed class PackingTests
         var outPath = workspace.PathFor("generated-order-out.csv");
         var expectedBoxes = ItemRow.ParseSimple(inPath).Sum(row => row.Quantity);
 
-        GeneticPalletPacker.PackCsv(inPath, outPath, pallet, seed: 7);
+        PalletPacker.PackCsv(inPath, outPath, pallet, seed: 7);
 
         var result = PackingCsvValidator.ReadPackingCsv(outPath);
         Assert.NotNull(result.Pallet);
@@ -208,7 +208,7 @@ public sealed class PackingTests
         var outPath = workspace.PathFor("out.csv");
         WriteOrderCsv(inPath, new TestSku(700003, 26, 200, 200, 200));
 
-        GeneticPalletPacker.PackCsv(inPath, outPath, pallet, seed: 11);
+        PalletPacker.PackCsv(inPath, outPath, pallet, seed: 11);
 
         var result = PackingCsvValidator.ReadPackingCsv(outPath);
         Assert.Equal(26, result.Boxes.Count);
@@ -231,7 +231,7 @@ public sealed class PackingTests
             "700010,2,200,200,200,1000,5,3,0,"
         });
 
-        GeneticPalletPacker.PackCsv(inPath, outPath, pallet, seed: 13);
+        PalletPacker.PackCsv(inPath, outPath, pallet, seed: 13);
 
         var result = PackingCsvValidator.ReadPackingCsv(outPath);
         Assert.Equal(2, result.Boxes.Count);
@@ -250,7 +250,7 @@ public sealed class PackingTests
         var outPath = workspace.PathFor("out.csv");
         WriteOrderCsv(inPath, new TestSku(700004, 50, 200, 200, 200));
 
-        GeneticPalletPacker.PackCsv(inPath, outPath, pallet, container, seed: 17);
+        PalletPacker.PackCsv(inPath, outPath, pallet, container, seed: 17);
 
         var result = PackingCsvValidator.ReadPackingCsv(outPath);
         Assert.Equal(50, result.Boxes.Count);
@@ -271,7 +271,7 @@ public sealed class PackingTests
         var outPath = workspace.PathFor("out.csv");
         WriteOrderCsv(inPath, new TestSku(700005, 4, 200, 200, 200, Weight: 2000, Strength: 5));
 
-        GeneticPalletPacker.PackCsv(inPath, outPath, pallet, seed: 23);
+        PalletPacker.PackCsv(inPath, outPath, pallet, seed: 23);
 
         var result = PackingCsvValidator.ReadPackingCsv(outPath);
         Assert.Equal(4, result.Boxes.Count);
@@ -293,7 +293,7 @@ public sealed class PackingTests
             new TestSku(700006, 1, 1200, 800, 100, Weight: 1000, Strength: 5),
             new TestSku(700007, 1, 1200, 800, 100, Weight: 1000, Strength: 5, Caustic: 1));
 
-        GeneticPalletPacker.PackCsv(inPath, outPath, pallet, seed: 29);
+        PalletPacker.PackCsv(inPath, outPath, pallet, seed: 29);
 
         var result = PackingCsvValidator.ReadPackingCsv(outPath);
         Assert.Equal(2, result.Boxes.Count);

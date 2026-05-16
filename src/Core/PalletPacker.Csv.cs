@@ -6,7 +6,7 @@ using Palletes.Utils;
 
 namespace Palletes.Core
 {
-    public static partial class GeneticPalletPacker
+    public static partial class PalletPacker
     {
         private static List<PackBox> ExpandBoxes(List<ItemRow> items)
         {

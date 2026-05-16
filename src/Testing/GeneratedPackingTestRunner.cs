@@ -47,11 +47,11 @@ namespace Palletes.Testing
                     var oneSw = Stopwatch.StartNew();
                     if (packingContainer is null)
                     {
-                        GeneticPalletPacker.PackCsv(inPath, outPath, packingPallet, seed);
+                        PalletPacker.PackCsv(inPath, outPath, packingPallet, seed);
                     }
                     else
                     {
-                        GeneticPalletPacker.PackCsv(inPath, outPath, packingPallet, packingContainer, seed);
+                        PalletPacker.PackCsv(inPath, outPath, packingPallet, packingContainer, seed);
                     }
                     oneSw.Stop();
 

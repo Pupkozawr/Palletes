@@ -12,7 +12,7 @@ namespace Palletes.Testing
 {
     public static class FitnessWeightExperimentRunner
     {
-        private sealed record Candidate(string Name, GeneticPalletPacker.FitnessWeights Weights);
+        private sealed record Candidate(string Name, PalletPacker.FitnessWeights Weights);
 
         private sealed class RunMetric
         {
@@ -105,7 +105,7 @@ namespace Palletes.Testing
 
                         try
                         {
-                            GeneticPalletPacker.PackCsvForExperiment(orderPath, outPath, packingPallet, packingContainer, runSeed, candidate.Weights);
+                            PalletPacker.PackCsvForExperiment(orderPath, outPath, packingPallet, packingContainer, runSeed, candidate.Weights);
                             sw.Stop();
 
                             var metric = Measure(candidate.Name, orderName, runSeed, outPath, sw.ElapsedMilliseconds);
@@ -147,13 +147,13 @@ namespace Palletes.Testing
         {
             return new List<Candidate>
             {
-                new("current_constants", new GeneticPalletPacker.FitnessWeights("current_constants", 0.18, 0.52, 0.06, 0.14, 0.06, 0.04, 0.02)),
-                new("previous_balanced", new GeneticPalletPacker.FitnessWeights("previous_balanced", 0.26, 0.38, 0.10, 0.16, 0.06, 0.04, 0.02)),
-                new("legacy_no_stability", new GeneticPalletPacker.FitnessWeights("legacy_no_stability", 0.30, 0.40, 0.10, 0.20, 0.00, 0.00, 0.02)),
-                new("density_first", new GeneticPalletPacker.FitnessWeights("density_first", 0.42, 0.30, 0.08, 0.14, 0.04, 0.02, 0.02)),
-                new("stability_first", new GeneticPalletPacker.FitnessWeights("stability_first", 0.22, 0.32, 0.08, 0.13, 0.18, 0.07, 0.02)),
-                new("grouping_first", new GeneticPalletPacker.FitnessWeights("grouping_first", 0.22, 0.34, 0.24, 0.12, 0.05, 0.03, 0.02)),
-                new("heavy_low_first", new GeneticPalletPacker.FitnessWeights("heavy_low_first", 0.23, 0.34, 0.08, 0.13, 0.07, 0.15, 0.02))
+                new("current_constants", new PalletPacker.FitnessWeights("current_constants", 0.18, 0.52, 0.06, 0.14, 0.06, 0.04, 0.02)),
+                new("previous_balanced", new PalletPacker.FitnessWeights("previous_balanced", 0.26, 0.38, 0.10, 0.16, 0.06, 0.04, 0.02)),
+                new("legacy_no_stability", new PalletPacker.FitnessWeights("legacy_no_stability", 0.30, 0.40, 0.10, 0.20, 0.00, 0.00, 0.02)),
+                new("density_first", new PalletPacker.FitnessWeights("density_first", 0.42, 0.30, 0.08, 0.14, 0.04, 0.02, 0.02)),
+                new("stability_first", new PalletPacker.FitnessWeights("stability_first", 0.22, 0.32, 0.08, 0.13, 0.18, 0.07, 0.02)),
+                new("grouping_first", new PalletPacker.FitnessWeights("grouping_first", 0.22, 0.34, 0.24, 0.12, 0.05, 0.03, 0.02)),
+                new("heavy_low_first", new PalletPacker.FitnessWeights("heavy_low_first", 0.23, 0.34, 0.08, 0.13, 0.07, 0.15, 0.02))
             };
         }
 
